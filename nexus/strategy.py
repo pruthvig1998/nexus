@@ -1,4 +1,4 @@
-"""All trading strategies in one file — Momentum, MeanReversion, AIFundamental.
+"""All trading strategies — Momentum, MeanReversion, ORB, AIFundamental.
 
 Signal quality improvements vs v1:
 1. Volume gate: require >1.2x 20d avg — eliminates ~35% of false signals
@@ -7,6 +7,11 @@ Signal quality improvements vs v1:
 4. Score threshold raised to 0.65 in config
 5. RSI mean-reversion threshold tightened to <25 (not just <30)
 6. 3:1 R:R target (was 2:1) with 1.5x ATR stop (was 2x)
+
+v3.2 additions:
+- ORBStrategy: Opening Range Breakout (yesterday's H/L as daily range proxy)
+- MeanReversionStrategy: Z-score gate, reversal candle, RSI momentum,
+  extended 3σ target, capitulation volume, 0.5× ATR tight stop
 """
 from __future__ import annotations
 
@@ -215,13 +220,191 @@ class MomentumStrategy:
             return None
 
 
-class MeanReversionStrategy:
-    """Bollinger Band breach + extreme RSI — fade the move back to the mean.
+def _zscore(series: pd.Series, period: int = 20) -> float:
+    """Z-score of the last value relative to a rolling window."""
+    if len(series) < period:
+        return 0.0
+    window = series.iloc[-period:]
+    std = float(window.std())
+    if std < 1e-9:
+        return 0.0
+    return float((series.iloc[-1] - window.mean()) / std)
 
-    Does NOT apply the trend regime gate (mean reversion is by definition
-    counter-trend). Instead uses a stricter RSI threshold (<25 for buy).
+
+class MeanReversionStrategy:
+    """Multi-signal mean reversion: BB + RSI + Z-score + reversal confirmation.
+
+    Entry gates (ALL must pass):
+      1. Price beyond ±2.5σ Bollinger Band (extreme statistical deviation)
+      2. RSI < 25 oversold (buy) or > 75 overbought (sell)
+      3. |Z-score| ≥ 2.0 (price is statistically extreme vs 20d mean)
+      4. Reversal candle: today's close recovers vs yesterday's close
+         — prevents catching a falling knife mid-move
+      5. Capitulation volume: vol ≥ 1.5× 20d avg (exhaustion signature)
+      6. RSI momentum: RSI is turning (not still accelerating in extreme direction)
+
+    Targets:
+      - Standard deviation (|z| 2.0–3.0): middle BB (mean reversion)
+      - Extreme deviation (|z| > 3.0): opposite BB band (full overshoot revert)
+
+    Stop:
+      - 0.5× ATR beyond the extreme (tight — price should not extend further)
     """
     name = "mean_reversion"
+
+    def __init__(self) -> None:
+        cfg = get_config()
+        self._s = cfg.strategy
+        self._r = cfg.risk
+
+    async def analyze(self, ticker: str, df: pd.DataFrame) -> Optional[Signal]:
+        try:
+            if df is None or len(df) < 40:
+                return None
+
+            closes = df["close"]
+            highs = df["high"]
+            lows = df["low"]
+            opens = df["open"] if "open" in df.columns else closes
+            volumes = df["volume"]
+            last_price = float(closes.iloc[-1])
+            prev_close = float(closes.iloc[-2])
+
+            # ── Gate 1: Capitulation volume ───────────────────────────────────
+            vol_r = volume_ratio(volumes, period=20)
+            if vol_r < 1.5:   # demand elevated volume for mean rev entries
+                return None
+
+            # ── Compute indicators ────────────────────────────────────────────
+            rsi_result = rsi(closes, period=self._s.rsi_period)
+            rsi_prev = rsi(closes.iloc[:-1], period=self._s.rsi_period)
+            bb_result = bollinger_bands(closes, period=self._s.bb_period,
+                                        num_std=self._s.bb_std)
+            atr_result = atr(highs, lows, closes, period=self._s.atr_period,
+                             entry_price=last_price,
+                             multiplier=self._r.atr_stop_multiplier)
+            z = _zscore(closes, period=20)
+
+            # ── Thresholds ────────────────────────────────────────────────────
+            oversold_threshold = self._s.rsi_mean_rev_oversold        # default 25
+            overbought_threshold = 100 - oversold_threshold            # default 75
+            deep_oversold  = rsi_result.value < oversold_threshold
+            deep_overbought = rsi_result.value > overbought_threshold
+            extreme_z = abs(z) > 3.0   # triggers extended target
+
+            # ── LONG: oversold, below lower BB, price turning up ──────────────
+            if (bb_result.below_lower
+                    and deep_oversold
+                    and z < -2.0             # statistically extreme
+                    and last_price > prev_close  # reversal candle: price recovering
+                    and rsi_result.value >= rsi_prev.value - 2):  # RSI not still diving
+
+                # Score: deeper the deviation, higher conviction
+                deviation = abs(z) - 2.0   # excess z beyond 2σ
+                score = round(min(0.60 + deviation * 0.08, 0.95), 4)
+
+                # Tight stop: 0.5× ATR below current low
+                stop_px = float(lows.iloc[-1]) - atr_result.value * 0.5
+
+                # Extended target at extreme deviations
+                if extreme_z:
+                    target_px = bb_result.upper   # full reversion to opposite band
+                    target_label = f"upper BB ({bb_result.upper:.2f})"
+                else:
+                    target_px = bb_result.middle
+                    target_label = f"mid BB ({bb_result.middle:.2f})"
+
+                reasoning = (
+                    f"Mean rev LONG: RSI={rsi_result.value:.1f} (oversold), "
+                    f"z={z:.2f}, below lower BB ({bb_result.lower:.2f}), "
+                    f"vol={vol_r:.1f}x, target {target_label}"
+                )
+                return Signal(
+                    ticker=ticker, direction="BUY", score=score,
+                    strategy=self.name, reasoning=reasoning,
+                    entry_price=last_price, stop_price=stop_px,
+                    target_price=target_px,
+                    limit_price=last_price * 1.0005,
+                    rsi_val=rsi_result.value, bb_pct_b=bb_result.pct_b,
+                    atr_val=atr_result.value, vol_ratio=vol_r,
+                )
+
+            # ── SHORT: overbought, above upper BB, price turning down ──────────
+            if (bb_result.above_upper
+                    and deep_overbought
+                    and z > 2.0
+                    and last_price < prev_close  # reversal candle: price retreating
+                    and rsi_result.value <= rsi_prev.value + 2):  # RSI not still rising
+
+                deviation = abs(z) - 2.0
+                score = round(min(0.60 + deviation * 0.08, 0.95), 4)
+
+                stop_px = float(highs.iloc[-1]) + atr_result.value * 0.5
+
+                if extreme_z:
+                    target_px = bb_result.lower
+                    target_label = f"lower BB ({bb_result.lower:.2f})"
+                else:
+                    target_px = bb_result.middle
+                    target_label = f"mid BB ({bb_result.middle:.2f})"
+
+                reasoning = (
+                    f"Mean rev SHORT: RSI={rsi_result.value:.1f} (overbought), "
+                    f"z={z:.2f}, above upper BB ({bb_result.upper:.2f}), "
+                    f"vol={vol_r:.1f}x, target {target_label}"
+                )
+                return Signal(
+                    ticker=ticker, direction="SELL", score=score,
+                    strategy=self.name, reasoning=reasoning,
+                    entry_price=last_price, stop_price=stop_px,
+                    target_price=target_px,
+                    limit_price=last_price * 0.9995,
+                    rsi_val=rsi_result.value, bb_pct_b=bb_result.pct_b,
+                    atr_val=atr_result.value, vol_ratio=vol_r,
+                )
+
+            return None
+        except Exception as e:
+            log.error("MeanReversion analyze failed", ticker=ticker, error=str(e))
+            return None
+
+
+class ORBStrategy:
+    """Opening Range Breakout — trade confirmed breaks of the prior day's range.
+
+    On daily bars the 'opening range' is yesterday's high/low. This is the
+    standard institutional proxy used when intraday data is unavailable.
+    For live trading the engine should feed 30-minute bars so the range is
+    the first candle of the session.
+
+    Entry rules
+    ───────────
+    LONG  (upside breakout):
+      • today's close > yesterday's high + ATR buffer (confirmed, not a wick)
+      • volume ≥ 1.5× 20d average (institutional participation)
+      • price above 20 SMA (trend alignment — trade with the bigger move)
+      • range is well-formed: 0.3% ≤ range_width/price ≤ 4% (avoid erratic days)
+      • no gap: open ≤ yesterday's high + 0.5% (don't chase huge gaps)
+
+    SHORT (downside breakdown):
+      • today's close < yesterday's low - ATR buffer
+      • volume ≥ 1.5× 20d average
+      • price below 20 SMA
+      • same range and gap filters as above
+
+    Exits
+    ─────
+    Stop loss : opposite boundary of the opening range
+                (long stop = yesterday's low; short stop = yesterday's high)
+    Target    : 1.5× range_width projected from the breakout level
+    Score     : 0.65 base + volume bonus + trend bonus, capped at 0.92
+    """
+    name = "orb"
+    _ORB_BUFFER_ATR_FRAC = 0.10   # 10% of ATR as confirmation buffer
+    _VOL_THRESHOLD = 1.5          # minimum vol ratio for breakout entry
+    _RANGE_MIN_PCT = 0.003        # 0.3% minimum range relative to price
+    _RANGE_MAX_PCT = 0.04         # 4% maximum (avoid wide/erratic ranges)
+    _GAP_MAX_PCT   = 0.005        # 0.5% max gap above/below range before entry
 
     def __init__(self) -> None:
         cfg = get_config()
@@ -234,59 +417,104 @@ class MeanReversionStrategy:
                 return None
 
             closes = df["close"]
-            highs = df["high"]
-            lows = df["low"]
+            highs  = df["high"]
+            lows   = df["low"]
+            opens  = df["open"] if "open" in df.columns else closes
             volumes = df["volume"]
-            last_price = float(closes.iloc[-1])
 
-            # Volume gate still applies
-            vol_r = volume_ratio(volumes, period=20)
-            if vol_r < self._s.volume_filter_multiplier:
+            last_close = float(closes.iloc[-1])
+            last_open  = float(opens.iloc[-1])
+            today_high = float(highs.iloc[-1])
+            today_low  = float(lows.iloc[-1])
+
+            # Yesterday's range = the "opening range" on daily bars
+            orh = float(highs.iloc[-2])   # opening range high
+            orl = float(lows.iloc[-2])    # opening range low
+            range_width = orh - orl
+            if range_width <= 0:
                 return None
 
-            rsi_result = rsi(closes, period=self._s.rsi_period)
-            bb_result = bollinger_bands(closes, period=self._s.bb_period,
-                                        num_std=self._s.bb_std)
+            # ── Gate 1: Well-formed range (not too wide/narrow) ───────────────
+            range_pct = range_width / last_close
+            if not (self._RANGE_MIN_PCT <= range_pct <= self._RANGE_MAX_PCT):
+                return None
+
+            # ── Gate 2: Volume confirmation ────────────────────────────────────
+            vol_r = volume_ratio(volumes, period=20)
+            if vol_r < self._VOL_THRESHOLD:
+                return None
+
+            # ── Compute supporting indicators ──────────────────────────────────
             atr_result = atr(highs, lows, closes, period=self._s.atr_period,
-                             entry_price=last_price,
+                             entry_price=last_close,
                              multiplier=self._r.atr_stop_multiplier)
+            buffer = atr_result.value * self._ORB_BUFFER_ATR_FRAC
+            sma20_val = sma(closes, period=20)
+            above_sma = sma20_val is not None and last_close > sma20_val
+            below_sma = sma20_val is not None and last_close < sma20_val
 
-            # Stricter RSI thresholds for mean reversion quality
-            deep_oversold = rsi_result.value < self._s.rsi_mean_rev_oversold   # <25
-            deep_overbought = rsi_result.value > (100 - self._s.rsi_mean_rev_oversold)  # >75
+            # ── Gate 3: No runaway gap (price shouldn't already be far past range)
+            gap_above = last_open - orh   # positive = gapped above range at open
+            gap_below = orl - last_open   # positive = gapped below range at open
 
-            if bb_result.below_lower and deep_oversold:
-                score = round(min(0.5 + (self._s.rsi_mean_rev_oversold - rsi_result.value) / 50, 0.92), 4)
-                stop_px = last_price - atr_result.value * self._r.atr_stop_multiplier
-                target_px = bb_result.middle  # mean = the band middle
+            # ── LONG: close above ORH + buffer ────────────────────────────────
+            if (last_close > orh + buffer
+                    and gap_above <= orh * self._GAP_MAX_PCT
+                    and above_sma):
+
+                stop_px   = orl   # full range stop at opposite boundary
+                target_px = last_close + 1.5 * range_width
+
+                # Bonus scoring
+                vol_bonus   = min((vol_r - self._VOL_THRESHOLD) * 0.05, 0.10)
+                trend_bonus = 0.05 if above_sma else 0.0
+                score = round(min(0.65 + vol_bonus + trend_bonus, 0.92), 4)
+
+                reasoning = (
+                    f"ORB breakout LONG: close {last_close:.2f} > ORH {orh:.2f} "
+                    f"(range {range_pct:.1%}), vol={vol_r:.1f}x, "
+                    f"stop=ORL {stop_px:.2f}, target={target_px:.2f}"
+                )
                 return Signal(
                     ticker=ticker, direction="BUY", score=score,
-                    strategy=self.name,
-                    reasoning=f"Deep oversold BB breach: RSI={rsi_result.value:.1f}, below lower BB ({bb_result.lower:.2f})",
-                    entry_price=last_price, stop_price=stop_px,
+                    strategy=self.name, reasoning=reasoning,
+                    entry_price=last_close,
+                    stop_price=stop_px,
                     target_price=target_px,
-                    limit_price=last_price * 1.001,
-                    rsi_val=rsi_result.value, bb_pct_b=bb_result.pct_b,
-                    vol_ratio=vol_r,
+                    limit_price=last_close * 1.001,
+                    atr_val=atr_result.value, vol_ratio=vol_r,
                 )
 
-            if bb_result.above_upper and deep_overbought:
-                score = round(min(0.5 + (rsi_result.value - (100 - self._s.rsi_mean_rev_oversold)) / 50, 0.92), 4)
-                stop_px = last_price + atr_result.value * self._r.atr_stop_multiplier
-                target_px = bb_result.middle
+            # ── SHORT: close below ORL - buffer ───────────────────────────────
+            if (last_close < orl - buffer
+                    and gap_below <= orl * self._GAP_MAX_PCT
+                    and below_sma):
+
+                stop_px   = orh   # full range stop at opposite boundary
+                target_px = last_close - 1.5 * range_width
+
+                vol_bonus   = min((vol_r - self._VOL_THRESHOLD) * 0.05, 0.10)
+                trend_bonus = 0.05 if below_sma else 0.0
+                score = round(min(0.65 + vol_bonus + trend_bonus, 0.92), 4)
+
+                reasoning = (
+                    f"ORB breakdown SHORT: close {last_close:.2f} < ORL {orl:.2f} "
+                    f"(range {range_pct:.1%}), vol={vol_r:.1f}x, "
+                    f"stop=ORH {stop_px:.2f}, target={target_px:.2f}"
+                )
                 return Signal(
                     ticker=ticker, direction="SELL", score=score,
-                    strategy=self.name,
-                    reasoning=f"Deep overbought BB breach: RSI={rsi_result.value:.1f}, above upper BB ({bb_result.upper:.2f})",
-                    entry_price=last_price, stop_price=stop_px,
+                    strategy=self.name, reasoning=reasoning,
+                    entry_price=last_close,
+                    stop_price=stop_px,
                     target_price=target_px,
-                    limit_price=last_price * 0.999,
-                    rsi_val=rsi_result.value, bb_pct_b=bb_result.pct_b,
-                    vol_ratio=vol_r,
+                    limit_price=last_close * 0.999,
+                    atr_val=atr_result.value, vol_ratio=vol_r,
                 )
+
             return None
         except Exception as e:
-            log.error("MeanReversion analyze failed", ticker=ticker, error=str(e))
+            log.error("ORB analyze failed", ticker=ticker, error=str(e))
             return None
 
 

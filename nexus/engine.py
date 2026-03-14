@@ -24,7 +24,8 @@ from nexus.config import NEXUSConfig, get_config
 from nexus.logger import get_logger
 from nexus.risk import RiskLimits, size_position
 from nexus.strategy import (
-    AIFundamentalStrategy, MeanReversionStrategy, MomentumStrategy, Signal,
+    AIFundamentalStrategy, MeanReversionStrategy, MomentumStrategy,
+    ORBStrategy, Signal,
 )
 from nexus.tracker import PortfolioTracker
 
@@ -103,7 +104,7 @@ class NEXUSEngine:
         self._running = False
         self._scan_count = 0
 
-        self._strategies = [MomentumStrategy(), MeanReversionStrategy()]
+        self._strategies = [MomentumStrategy(), MeanReversionStrategy(), ORBStrategy()]
         if self._cfg.anthropic_api_key:
             self._strategies.append(AIFundamentalStrategy())
 
