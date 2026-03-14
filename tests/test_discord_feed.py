@@ -10,56 +10,154 @@ import pytest
 from nexus.discord_feed import _parse_message
 
 
-# ── Direction detection ───────────────────────────────────────────────────────
+# ── Parametrized BUY keyword detection ───────────────────────────────────────
 
-def test_explicit_ticker_buy():
-    sigs = _parse_message("$AAPL looking bullish, buying calls", "u", "c", "s")
-    assert any(s.ticker == "AAPL" and s.direction == "BUY" for s in sigs)
-
-
-def test_explicit_ticker_sell():
-    sigs = _parse_message("shorting $TSLA on this breakdown", "u", "c", "s")
-    assert any(s.ticker == "TSLA" and s.direction == "SELL" for s in sigs)
-
-
-def test_bare_ticker_buy():
-    sigs = _parse_message("NVDA long entry here, buying the dip", "u", "c", "s")
-    assert any(s.ticker == "NVDA" and s.direction == "BUY" for s in sigs)
+@pytest.mark.parametrize("keyword", [
+    "buy", "long", "calls", "bullish", "moon", "breakout", "entry", "dip",
+])
+def test_buy_keyword_detected(keyword):
+    msg = f"$AAPL {keyword} here"
+    sigs = _parse_message(msg, "u", "c", "s")
+    assert len(sigs) == 1
+    assert sigs[0].ticker == "AAPL"
+    assert sigs[0].direction == "BUY"
 
 
-def test_bare_ticker_sell():
-    sigs = _parse_message("MSFT puts play, bearish into earnings", "u", "c", "s")
-    assert any(s.ticker == "MSFT" and s.direction == "SELL" for s in sigs)
+# ── Parametrized SELL keyword detection ──────────────────────────────────────
+
+@pytest.mark.parametrize("keyword", [
+    "sell", "short", "puts", "bearish", "dump", "breakdown", "exit",
+])
+def test_sell_keyword_detected(keyword):
+    msg = f"$TSLA {keyword} now"
+    sigs = _parse_message(msg, "u", "c", "s")
+    assert len(sigs) == 1
+    assert sigs[0].ticker == "TSLA"
+    assert sigs[0].direction == "SELL"
 
 
-# ── Common word blocklist ─────────────────────────────────────────────────────
+# ── Common word blocklist (exhaustive) ───────────────────────────────────────
 
-def test_common_word_not_ticker_us():
-    sigs = _parse_message("I think US markets are going up today", "u", "c", "s")
-    assert "US" not in [s.ticker for s in sigs]
-
-
-def test_common_word_not_ticker_i():
-    sigs = _parse_message("I am going long AAPL today", "u", "c", "s")
-    assert "I" not in [s.ticker for s in sigs]
-
-
-def test_common_word_not_ticker_in():
-    sigs = _parse_message("IN a bullish trend for AAPL", "u", "c", "s")
-    assert "IN" not in [s.ticker for s in sigs]
+@pytest.mark.parametrize("word", [
+    "I", "A", "AT", "BE", "DO", "GO", "IT", "MY", "OR", "SO", "TO",
+    "US", "AN", "AS", "IF", "IS", "IN", "ON", "UP", "BY",
+])
+def test_common_word_not_extracted_as_ticker(word):
+    msg = f"{word} buy AAPL long"
+    sigs = _parse_message(msg, "u", "c", "s")
+    tickers = [s.ticker for s in sigs]
+    assert word not in tickers, f"Common word '{word}' should be blocked"
 
 
-# ── Multi-ticker ──────────────────────────────────────────────────────────────
+# ── Precise score boundaries ────────────────────────────────────────────────
 
-def test_multi_ticker_same_direction():
-    sigs = _parse_message("long $AAPL and $MSFT both look great", "u", "c", "s")
-    tickers = {s.ticker for s in sigs}
-    assert {"AAPL", "MSFT"}.issubset(tickers)
+def test_score_bare_ticker_is_base():
+    """Bare ticker + direction keyword = base score 0.55."""
+    sigs = _parse_message("AAPL buy", "u", "c", "s")
+    assert len(sigs) == 1
+    assert sigs[0].score == 0.55
 
 
-def test_multi_ticker_mixed_directions():
+def test_score_explicit_ticker_no_price():
+    """Explicit $TICKER + direction keyword = 0.55 + 0.05 = 0.60."""
+    sigs = _parse_message("$AAPL buy", "u", "c", "s")
+    assert len(sigs) == 1
+    assert sigs[0].score == 0.60
+
+
+def test_score_explicit_ticker_with_price():
+    """Explicit $TICKER + direction + price nearby = 0.55 + 0.05 + 0.05 = 0.65."""
+    sigs = _parse_message("$AAPL buy at $175", "u", "c", "s")
+    assert len(sigs) == 1
+    assert sigs[0].score == 0.65
+
+
+def test_score_capped_at_080():
+    """Score must never exceed the 0.80 cap."""
+    sigs = _parse_message(
+        "$AAPL strong buy at $175, going long calls bullish breakout", "u", "c", "s"
+    )
+    for s in sigs:
+        assert s.score <= 0.80
+
+
+def test_score_bare_with_price_is_060():
+    """Bare ticker + direction + price nearby = 0.55 + 0.05 = 0.60 (price bonus only)."""
+    sigs = _parse_message("AAPL buy at $175", "u", "c", "s")
+    assert len(sigs) == 1
+    assert sigs[0].score == 0.60
+
+
+# ── Reasoning field format ───────────────────────────────────────────────────
+
+def test_reasoning_exact_format():
+    """Reasoning must be exactly: 'Discord: {author} in #{channel}: {snippet}'."""
+    sigs = _parse_message("$AAPL long", "trader_joe", "stocks", "MyServer")
+    assert len(sigs) == 1
+    assert sigs[0].reasoning.startswith("Discord: trader_joe in #stocks: ")
+
+
+def test_reasoning_snippet_matches_message_start():
+    msg = "$AAPL long entry here"
+    sigs = _parse_message(msg, "alice", "alerts", "srv")
+    assert len(sigs) == 1
+    expected = f"Discord: alice in #alerts: {msg}"
+    assert sigs[0].reasoning == expected
+
+
+def test_reasoning_snippet_truncated_at_120_chars():
+    body = "x" * 200
+    msg = f"$AAPL buy {body}"
+    sigs = _parse_message(msg, "u", "c", "s")
+    assert len(sigs) == 1
+    snippet_part = sigs[0].reasoning.split(": ", 2)[-1]
+    assert len(snippet_part) <= 120
+
+
+# ── Edge cases ───────────────────────────────────────────────────────────────
+
+def test_empty_string_returns_no_signals():
+    sigs = _parse_message("", "u", "c", "s")
+    assert sigs == []
+
+
+def test_whitespace_only_returns_no_signals():
+    sigs = _parse_message("   \n\t  ", "u", "c", "s")
+    assert sigs == []
+
+
+def test_numbers_only_returns_no_signals():
+    sigs = _parse_message("12345 678 90.12", "u", "c", "s")
+    assert sigs == []
+
+
+def test_emoji_only_returns_no_signals():
+    sigs = _parse_message("\U0001f680\U0001f4b0\U0001f4c8", "u", "c", "s")
+    assert sigs == []
+
+
+def test_very_long_message_does_not_crash():
+    msg = "$AAPL buy " + "word " * 5000
+    sigs = _parse_message(msg, "u", "c", "s")
+    assert len(sigs) >= 1
+    assert sigs[0].ticker == "AAPL"
+
+
+# ── Entry/stop/target prices zeroed ─────────────────────────────────────────
+
+def test_all_prices_exactly_zero():
+    sigs = _parse_message("$AAPL buy at $175", "u", "c", "s")
+    assert len(sigs) == 1
+    assert sigs[0].entry_price == 0.0
+    assert sigs[0].stop_price == 0.0
+    assert sigs[0].target_price == 0.0
+
+
+# ── Multi-ticker with context isolation ──────────────────────────────────────
+
+def test_multi_ticker_mixed_directions_no_context_bleeding():
     # Tickers need enough separation so buy/sell keywords don't bleed across
-    # the ±50 char context window. "shorting" starts at char ~73 here, past
+    # the +/-50 char context window. "shorting" starts at char ~73 here, past
     # AAPL's window boundary of ~65.
     msg = "Going long $AAPL calls here for the breakout move, and separately shorting $TSLA puts"
     sigs = _parse_message(msg, "u", "c", "s")
@@ -68,90 +166,24 @@ def test_multi_ticker_mixed_directions():
     assert by_ticker.get("TSLA") == "SELL"
 
 
-# ── No direction → skip ───────────────────────────────────────────────────────
+# ── Direction: no direction → skip ───────────────────────────────────────────
 
-def test_no_direction_skipped():
-    sigs = _parse_message("What does everyone think about AAPL?", "u", "c", "s")
-    # Should either be empty or all below min score threshold
-    aapl_sigs = [s for s in sigs if s.ticker == "AAPL"]
-    assert len(aapl_sigs) == 0 or all(s.score < 0.55 for s in aapl_sigs)
+def test_no_direction_keyword_yields_no_signal():
+    sigs = _parse_message("What does everyone think about $AAPL?", "u", "c", "s")
+    assert sigs == []
 
 
 def test_pure_question_no_signal():
     sigs = _parse_message("Any thoughts on NVDA earnings tonight?", "u", "c", "s")
-    nvda_sigs = [s for s in sigs if s.ticker == "NVDA"]
-    assert len(nvda_sigs) == 0
+    assert sigs == []
 
 
-# ── Score calculation ─────────────────────────────────────────────────────────
+# ── Strategy name ────────────────────────────────────────────────────────────
 
-def test_explicit_score_at_least_base():
-    sigs = _parse_message("$AAPL buy", "u", "c", "s")
-    assert sigs, "Expected at least one signal"
-    assert sigs[0].score >= 0.55
-
-
-def test_explicit_score_higher_than_bare():
-    explicit = _parse_message("$AAPL buy", "u", "c", "s")
-    bare = _parse_message("AAPL buy", "u", "c", "s")
-    if explicit and bare:
-        aapl_explicit = next((s for s in explicit if s.ticker == "AAPL"), None)
-        aapl_bare = next((s for s in bare if s.ticker == "AAPL"), None)
-        if aapl_explicit and aapl_bare:
-            assert aapl_explicit.score >= aapl_bare.score
-
-
-def test_price_mention_boosts_score():
-    with_price = _parse_message("$AAPL buy at $175", "u", "c", "s")
-    without_price = _parse_message("$AAPL buy", "u", "c", "s")
-    if with_price and without_price:
-        wp = next((s for s in with_price if s.ticker == "AAPL"), None)
-        wop = next((s for s in without_price if s.ticker == "AAPL"), None)
-        if wp and wop:
-            assert wp.score >= wop.score
-
-
-def test_score_capped_at_080():
-    sigs = _parse_message("$AAPL strong buy at $175, going long calls bullish breakout", "u", "c", "s")
-    for s in sigs:
-        assert s.score <= 0.80
-
-
-# ── Strategy and reasoning ────────────────────────────────────────────────────
-
-def test_strategy_name():
+def test_strategy_is_discord():
     sigs = _parse_message("$AAPL long", "u", "c", "s")
-    assert all(s.strategy == "discord" for s in sigs)
-
-
-def test_reasoning_contains_author():
-    sigs = _parse_message("$AAPL long", "trader_joe", "stocks", "MyServer")
-    assert sigs, "Expected at least one signal"
-    assert all("trader_joe" in s.reasoning for s in sigs)
-
-
-def test_reasoning_contains_channel():
-    sigs = _parse_message("$AAPL long", "user123", "trading-alerts", "MyServer")
-    assert sigs, "Expected at least one signal"
-    assert all("#trading-alerts" in s.reasoning for s in sigs)
-
-
-def test_reasoning_snippet_truncated():
-    long_msg = "$AAPL buy " + "x" * 200
-    sigs = _parse_message(long_msg, "u", "c", "s")
-    for s in sigs:
-        # reasoning should not contain the full 200-char message
-        assert len(s.reasoning) < 300
-
-
-# ── Entry/stop/target zeroed ──────────────────────────────────────────────────
-
-def test_prices_zero_for_engine_to_fill():
-    sigs = _parse_message("$AAPL buy", "u", "c", "s")
-    for s in sigs:
-        assert s.entry_price == 0.0
-        assert s.stop_price == 0.0
-        assert s.target_price == 0.0
+    assert len(sigs) == 1
+    assert sigs[0].strategy == "discord"
 
 
 # ── Dedup (same ticker mentioned twice) ──────────────────────────────────────
@@ -159,4 +191,4 @@ def test_prices_zero_for_engine_to_fill():
 def test_dedup_same_ticker_in_message():
     sigs = _parse_message("$AAPL buy, AAPL looking strong", "u", "c", "s")
     aapl_sigs = [s for s in sigs if s.ticker == "AAPL"]
-    assert len(aapl_sigs) == 1  # only one signal per ticker per message
+    assert len(aapl_sigs) == 1

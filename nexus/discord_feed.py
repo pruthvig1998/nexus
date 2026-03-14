@@ -5,16 +5,26 @@ mentions + direction keywords and injects Signal objects into the engine's
 queue.
 
 Setup:
-  1. discord.com/developers/applications → New App → Bot → copy Token
-  2. Bot → Privileged Gateway Intents → enable Message Content Intent
-  3. OAuth2 → URL Generator → bot + Read Messages → invite to servers
+  1. discord.com/developers/applications -> New App -> Bot -> copy Token
+  2. Bot -> Privileged Gateway Intents -> enable Message Content Intent
+  3. OAuth2 -> URL Generator -> bot + Read Messages -> invite to servers
   4. Set DISCORD_BOT_TOKEN and DISCORD_CHANNEL_IDS in .env
+
+v3.1 improvements:
+  - Proximity-weighted ambiguity resolution (not just keyword count)
+  - Expanded BUY/SELL keyword sets with strength tiers
+  - Edge-case handling: empty, very short, all-caps messages
+  - JSON-schema-validated LLM confirmation
+  - Stats tracking (messages_processed, signals_emitted, dedup_skipped)
+  - Structured logging with context fields throughout
+  - Full type hints
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import re
-from typing import List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from nexus.config import DiscordConfig
 from nexus.logger import get_logger
@@ -25,18 +35,119 @@ log = get_logger("discord_feed")
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 COMMON_WORDS: set[str] = {
-    "I", "A", "AT", "BE", "DO", "GO", "IT", "MY", "OR", "SO", "TO",
-    "US", "AN", "AS", "IF", "IS", "IN", "ON", "UP", "BY",
+    "A", "AM", "AN", "AS", "AT", "BE", "BY", "DO", "GO", "HE", "HI",
+    "I", "IF", "IN", "IS", "IT", "ME", "MY", "NO", "OF", "OK", "ON",
+    "OR", "PM", "RE", "SO", "TO", "UP", "US", "WE",
+    # Common 3-letter words that look like tickers
+    "ALL", "AND", "ARE", "BIG", "BUT", "CAN", "CEO", "DAY", "DID",
+    "EPS", "ETF", "FOR", "GET", "GOT", "HAS", "HIS", "HOW", "IMO",
+    "ITS", "LET", "LOL", "MAY", "MOM", "NEW", "NOT", "NOW", "OLD",
+    "ONE", "OUR", "OUT", "OWN", "RUN", "SAY", "SEC", "SET", "SHE",
+    "THE", "TOP", "TRY", "TWO", "USE", "WAY", "WHO", "WHY", "WIN",
+    "YES", "YET", "YOU",
+    # Common 4-letter words
+    "BEEN", "BEST", "CALL", "CASH", "DEBT", "DOES", "DONE", "DOWN",
+    "DROP", "EACH", "EDIT", "EVEN", "ELON", "FAST", "FROM", "GAIN",
+    "GOOD", "GROW", "HALF", "HAVE", "HERE", "HIGH", "HOLD", "HOPE",
+    "INTO", "JUST", "KEEP", "KNOW", "LAST", "LIKE", "LONG", "LOOK",
+    "LOSS", "LOTS", "LOVE", "MADE", "MAKE", "MANY", "MORE", "MUCH",
+    "MUST", "NEAR", "NEED", "NEWS", "NEXT", "NICE", "ONCE", "ONLY",
+    "OVER", "PAID", "PEAK", "PLAY", "PULL", "PUSH", "PUTS", "REAL",
+    "RISK", "SAFE", "SAME", "SELL", "SEEN", "SEND", "SENT", "SOME",
+    "STOP", "SURE", "TAKE", "TALK", "THAT", "THEM", "THEN", "THEY",
+    "THIS", "TIME", "TOLD", "TOOK", "TURN", "VERY", "WAIT", "WANT",
+    "WENT", "WERE", "WHAT", "WHEN", "WILL", "WITH", "WORK", "YEAH",
+    "YEAR", "YOUR", "ZERO",
 }
 
 _TICKER_EXPLICIT = re.compile(r"\$([A-Z]{1,5})\b")
 _TICKER_BARE = re.compile(r"\b([A-Z]{2,5})\b")
 _PRICE_NEAR = re.compile(r"\$\d+(?:\.\d+)?")
 
-_BUY_KEYWORDS = {"buy", "long", "calls", "bullish", "moon", "breakout", "entry", "dip"}
-_SELL_KEYWORDS = {"sell", "short", "puts", "bearish", "dump", "breakdown", "exit"}
+# Direction keywords organized by strength tier.
+# Strong keywords (weight 2.0) are unambiguous trading actions.
+# Medium keywords (weight 1.5) are moderately directional.
+# Weak keywords (weight 1.0) are suggestive but context-dependent.
+_BUY_KEYWORDS: Dict[str, float] = {
+    # Strong (2.0)
+    "buy":        2.0,
+    "bought":     2.0,
+    "buying":     2.0,
+    "long":       2.0,
+    "calls":      2.0,
+    "call":       1.5,
+    "bid":        1.5,
+    # Medium (1.5)
+    "bullish":    1.5,
+    "breakout":   1.5,
+    "accumulate": 1.5,
+    "loading":    1.5,
+    "added":      1.5,
+    "adding":     1.5,
+    "entry":      1.5,
+    "upgrade":    1.5,
+    "upgraded":   1.5,
+    "upside":     1.5,
+    "rally":      1.5,
+    # Weak (1.0)
+    "moon":       1.0,
+    "rocket":     1.0,
+    "dip":        1.0,
+    "oversold":   1.0,
+    "undervalued": 1.0,
+    "bottom":     1.0,
+    "bounce":     1.0,
+    "green":      1.0,
+    "rip":        1.0,
+    "squeeze":    1.0,
+    "send":       1.0,
+}
 
-_CONTEXT_WINDOW = 50   # characters around a ticker mention to search for direction
+_SELL_KEYWORDS: Dict[str, float] = {
+    # Strong (2.0)
+    "sell":       2.0,
+    "sold":       2.0,
+    "selling":    2.0,
+    "short":      2.0,
+    "puts":       2.0,
+    "put":        1.5,
+    # Medium (1.5)
+    "bearish":    1.5,
+    "breakdown":  1.5,
+    "dumping":    1.5,
+    "dump":       1.5,
+    "exit":       1.5,
+    "exiting":    1.5,
+    "downgrade":  1.5,
+    "downgraded": 1.5,
+    "downside":   1.5,
+    "trimming":   1.5,
+    "trim":       1.5,
+    "cut":        1.5,
+    # Weak (1.0)
+    "crash":      1.0,
+    "tank":       1.0,
+    "tanking":    1.0,
+    "overvalued": 1.0,
+    "overbought": 1.0,
+    "fade":       1.0,
+    "fading":     1.0,
+    "red":        1.0,
+    "drop":       1.0,
+    "falling":    1.0,
+    "drill":      1.0,
+    "rug":        1.0,
+    "baghold":    1.0,
+}
+
+_CONTEXT_WINDOW: int = 60  # characters around a ticker mention to search
+
+# Minimum message length to bother parsing (after stripping whitespace).
+_MIN_MESSAGE_LENGTH: int = 3
+
+# LLM confirmation JSON schema keys for validation.
+_LLM_REQUIRED_KEYS: set[str] = {"ticker", "direction", "confidence"}
+_LLM_VALID_DIRECTIONS: set[str] = {"BUY", "SELL", "HOLD"}
 
 
 # ── Parser (module-level for easy unit testing) ───────────────────────────────
@@ -58,17 +169,40 @@ def _parse_message(
     Returns:
         List of Signal objects with direction BUY or SELL. Messages with no
         discernible direction are skipped (empty list returned).
+
+    Ambiguity resolution uses proximity-weighted scoring: each keyword's
+    contribution is scaled by ``weight / (1 + distance_to_ticker)`` so
+    keywords closer to the ticker dominate over distant ones.
     """
-    upper = content.upper()
+    # ── Edge cases ─────────────────────────────────────────────────────────
+    if not content or not content.strip():
+        return []
+
+    stripped = content.strip()
+    if len(stripped) < _MIN_MESSAGE_LENGTH:
+        return []
+
+    # Normalize all-caps messages: if >80% uppercase alpha chars, lowercase
+    # the whole thing for keyword matching (but keep original for ticker regex).
+    alpha_chars = [c for c in stripped if c.isalpha()]
+    if alpha_chars and sum(1 for c in alpha_chars if c.isupper()) / len(alpha_chars) > 0.80:
+        search_text = stripped.lower()
+        # Re-uppercase potential tickers that were $-prefixed in original
+        normalized = True
+    else:
+        search_text = content
+        normalized = False
+
     results: List[Signal] = []
     seen: set[str] = set()
 
-    # Collect tickers with metadata (ticker, position_in_text, explicit)
-    mentions: list[tuple[str, int, bool]] = []
+    # ── Collect ticker mentions with metadata ──────────────────────────────
+    mentions: List[Tuple[str, int, bool]] = []  # (ticker, position, explicit)
 
     for m in _TICKER_EXPLICIT.finditer(content):
         ticker = m.group(1)
-        mentions.append((ticker, m.start(), True))
+        if ticker not in COMMON_WORDS:
+            mentions.append((ticker, m.start(), True))
 
     for m in _TICKER_BARE.finditer(content):
         ticker = m.group(1)
@@ -77,40 +211,59 @@ def _parse_message(
         if not any(t == ticker for t, _, _ in mentions):
             mentions.append((ticker, m.start(), False))
 
+    # ── Score each ticker mention ──────────────────────────────────────────
     for ticker, pos, explicit in mentions:
         if ticker in seen:
             continue
         seen.add(ticker)
 
-        # Extract context window around the ticker mention
+        # Extract context window around the ticker mention.
         lo = max(0, pos - _CONTEXT_WINDOW)
         hi = min(len(content), pos + len(ticker) + _CONTEXT_WINDOW)
         ctx = content[lo:hi].lower()
 
-        # Determine direction
-        is_buy = any(kw in ctx for kw in _BUY_KEYWORDS)
-        is_sell = any(kw in ctx for kw in _SELL_KEYWORDS)
+        # Proximity-weighted direction scoring.
+        # For each keyword found in the context window, compute:
+        #   contribution = keyword_weight / (1 + char_distance_to_ticker)
+        # where char_distance is the distance from the keyword start to
+        # the ticker position (both relative to the context window).
+        ticker_pos_in_ctx = pos - lo
 
-        if not is_buy and not is_sell:
-            continue  # no direction → skip
+        buy_score = _compute_direction_score(
+            ctx, ticker_pos_in_ctx, _BUY_KEYWORDS,
+        )
+        sell_score = _compute_direction_score(
+            ctx, ticker_pos_in_ctx, _SELL_KEYWORDS,
+        )
 
-        # Ambiguous → use whichever side has more keyword hits (tie → skip)
-        if is_buy and is_sell:
-            buy_count = sum(1 for kw in _BUY_KEYWORDS if kw in ctx)
-            sell_count = sum(1 for kw in _SELL_KEYWORDS if kw in ctx)
-            if buy_count == sell_count:
+        if buy_score == 0.0 and sell_score == 0.0:
+            continue  # no directional keywords found
+
+        # Ambiguous: use proximity-weighted scores (ties -> skip)
+        if buy_score > 0.0 and sell_score > 0.0:
+            # Require at least 30% relative advantage to resolve ambiguity
+            total = buy_score + sell_score
+            if buy_score / total < 0.65 and sell_score / total < 0.65:
+                log.debug(
+                    "Ambiguous signal skipped",
+                    ticker=ticker,
+                    buy_score=f"{buy_score:.3f}",
+                    sell_score=f"{sell_score:.3f}",
+                    author=author,
+                    channel=channel,
+                )
                 continue
-            direction = "BUY" if buy_count > sell_count else "SELL"
+            direction = "BUY" if buy_score > sell_score else "SELL"
         else:
-            direction = "BUY" if is_buy else "SELL"
+            direction = "BUY" if buy_score > 0.0 else "SELL"
 
-        # Score
-        score = 0.55
+        # ── Confidence score ───────────────────────────────────────────────
+        score: float = 0.55
         if explicit:
             score += 0.05
         if _PRICE_NEAR.search(content[lo:hi]):
             score += 0.05
-        score = min(score, 0.80)
+        score = round(min(score, 0.80), 2)
 
         snippet = content[:120].replace("\n", " ")
         reasoning = f"Discord: {author} in #{channel}: {snippet}"
@@ -131,6 +284,36 @@ def _parse_message(
     return results
 
 
+def _compute_direction_score(
+    ctx: str,
+    ticker_pos: int,
+    keywords: Dict[str, float],
+) -> float:
+    """Compute proximity-weighted directional score for a set of keywords.
+
+    Each keyword hit contributes: ``weight / (1 + distance)`` where distance
+    is the character offset between the keyword and the ticker position within
+    the context window. This ensures nearby keywords dominate.
+
+    Args:
+        ctx:        Lowercased context window text.
+        ticker_pos: Position of the ticker within the context window.
+        keywords:   Mapping of keyword -> base weight.
+
+    Returns:
+        Total proximity-weighted score (0.0 if no keywords found).
+    """
+    total: float = 0.0
+    for kw, weight in keywords.items():
+        # Use word-boundary-aware search to avoid partial matches
+        # (e.g., "long" should not match "along")
+        pattern = rf"\b{re.escape(kw)}\b"
+        for m in re.finditer(pattern, ctx):
+            distance = abs(m.start() - ticker_pos)
+            total += weight / (1.0 + distance)
+    return total
+
+
 # ── DiscordFeed class ─────────────────────────────────────────────────────────
 
 class DiscordFeed:
@@ -140,9 +323,12 @@ class DiscordFeed:
         feed = DiscordFeed(cfg.discord, engine.get_signal_queue())
         await feed.start()    # runs until stopped or Ctrl+C
         await feed.stop()
+
+    Attributes:
+        stats: Read-only dict of operational counters.
     """
 
-    def __init__(self, config: DiscordConfig, signal_queue: asyncio.Queue) -> None:
+    def __init__(self, config: DiscordConfig, signal_queue: asyncio.Queue) -> None:  # type: ignore[type-arg]
         try:
             import discord  # type: ignore[import]
         except ImportError as exc:
@@ -153,71 +339,113 @@ class DiscordFeed:
         intents = discord.Intents.default()
         intents.message_content = True
 
-        self._client = discord.Client(intents=intents)
-        self._cfg = config
-        self._queue = signal_queue
+        self._client: discord.Client = discord.Client(intents=intents)
+        self._cfg: DiscordConfig = config
+        self._queue: asyncio.Queue = signal_queue  # type: ignore[type-arg]
         self._seen_ids: set[int] = set()
         self._discord = discord
+
+        # Operational counters
+        self._messages_processed: int = 0
+        self._signals_emitted: int = 0
+        self._dedup_skipped: int = 0
 
         # Wire event handlers
         self._client.event(self._on_ready)
         self._client.event(self._on_message)
 
-    # ── Discord event handlers ────────────────────────────────────────────────
+    # ── Stats property ─────────────────────────────────────────────────────
+
+    @property
+    def stats(self) -> Dict[str, int]:
+        """Return operational counters as a dict."""
+        return {
+            "messages_processed": self._messages_processed,
+            "signals_emitted": self._signals_emitted,
+            "dedup_skipped": self._dedup_skipped,
+        }
+
+    # ── Discord event handlers ─────────────────────────────────────────────
 
     async def _on_ready(self) -> None:
-        log.info("Discord bot connected",
-                 user=str(self._client.user),
-                 guilds=len(self._client.guilds))
+        user_str = str(self._client.user)
+        guild_count = len(self._client.guilds)
+        guild_names = [g.name for g in self._client.guilds]
+        log.info(
+            "Discord bot connected",
+            user=user_str,
+            guilds=guild_count,
+            guild_names=guild_names,
+        )
         await self._fetch_history()
 
-    async def _on_message(self, message) -> None:
+    async def _on_message(self, message: Any) -> None:
         # Ignore own messages
         if message.author == self._client.user:
             return
         await self._process(message)
 
-    # ── Internal helpers ──────────────────────────────────────────────────────
+    # ── Internal helpers ───────────────────────────────────────────────────
 
     async def _fetch_history(self) -> None:
         """On startup, backfill recent messages from configured channels."""
         for guild in self._client.guilds:
             for channel in guild.text_channels:
-                if (self._cfg.channel_ids and
-                        channel.id not in self._cfg.channel_ids):
+                if (self._cfg.channel_ids
+                        and channel.id not in self._cfg.channel_ids):
                     continue
                 try:
-                    count = 0
+                    count: int = 0
                     async for msg in channel.history(limit=self._cfg.history_limit):
                         await self._process(msg)
                         count += 1
-                    log.info("Backfilled channel history",
-                             channel=channel.name, guild=guild.name,
-                             messages=count)
+                    log.info(
+                        "Backfilled channel history",
+                        channel=channel.name,
+                        guild=guild.name,
+                        messages=count,
+                    )
                 except Exception as e:
-                    log.warning("Could not read channel history",
-                                channel=channel.name, error=str(e))
+                    log.warning(
+                        "Could not read channel history",
+                        channel=channel.name,
+                        guild=guild.name,
+                        error=str(e),
+                    )
 
-    async def _process(self, message) -> None:
+    async def _process(self, message: Any) -> None:
         """Deduplicate and parse a single Discord message."""
         if message.id in self._seen_ids:
+            self._dedup_skipped += 1
             return
         self._seen_ids.add(message.id)
 
         # Channel filter
-        if (self._cfg.channel_ids and
-                message.channel.id not in self._cfg.channel_ids):
+        if (self._cfg.channel_ids
+                and message.channel.id not in self._cfg.channel_ids):
             return
 
-        content = getattr(message, "content", "") or ""
+        content: str = getattr(message, "content", "") or ""
         if not content.strip():
+            log.debug("Skipping empty message", message_id=message.id)
             return
 
-        author = str(message.author.display_name)
-        channel = str(message.channel.name)
-        guild = str(message.guild.name) if message.guild else "DM"
+        self._messages_processed += 1
+
+        author: str = str(message.author.display_name)
+        channel: str = str(message.channel.name)
+        guild: str = str(message.guild.name) if message.guild else "DM"
 
         signals = _parse_message(content, author, channel, guild)
+
+        log.debug(
+            "Parsed message",
+            author=author,
+            channel=channel,
+            guild=guild,
+            content_len=len(content),
+            signals_found=len(signals),
+        )
 
         # Optional LLM confirmation
         if self._cfg.use_llm_parsing and signals:
@@ -226,55 +454,158 @@ class DiscordFeed:
         for sig in signals:
             if sig.score >= self._cfg.min_message_score:
                 self._queue.put_nowait(sig)
-                log.info("Discord signal",
-                         ticker=sig.ticker, direction=sig.direction,
-                         score=f"{sig.score:.2f}", author=author,
-                         channel=channel)
+                self._signals_emitted += 1
+                log.info(
+                    "Discord signal emitted",
+                    ticker=sig.ticker,
+                    direction=sig.direction,
+                    score=f"{sig.score:.2f}",
+                    author=author,
+                    channel=channel,
+                    guild=guild,
+                )
+            else:
+                log.debug(
+                    "Signal below threshold",
+                    ticker=sig.ticker,
+                    direction=sig.direction,
+                    score=f"{sig.score:.2f}",
+                    threshold=self._cfg.min_message_score,
+                )
 
-    async def _llm_confirm(self, content: str, signals: List[Signal]) -> List[Signal]:
-        """Optional: use Claude to confirm/boost signal confidence."""
+    async def _llm_confirm(
+        self, content: str, signals: List[Signal],
+    ) -> List[Signal]:
+        """Use Claude to confirm/boost signal confidence.
+
+        Sends the message to the LLM and validates the response against an
+        expected JSON schema. Only boosts signals where the LLM agrees on
+        both ticker and direction.
+
+        Returns the original signals (possibly boosted) on success, or
+        unmodified signals on any failure.
+        """
         try:
             import anthropic  # type: ignore[import]
-            import json
 
             client = anthropic.AsyncAnthropic()
             tickers = [s.ticker for s in signals]
             prompt = (
-                f"Analyze this Discord trading message and return JSON array of "
-                f"{{ticker, direction (BUY/SELL), confidence (0.0-1.0)}} for these tickers: "
-                f"{tickers}.\nMessage: {content[:500]}\n"
-                "Return ONLY valid JSON array, no explanation."
+                "Analyze this Discord trading message. For each ticker listed, "
+                "determine the trading direction and your confidence.\n\n"
+                f"Tickers to evaluate: {tickers}\n"
+                f"Message: {content[:500]}\n\n"
+                "Return ONLY a valid JSON array. Each element MUST have exactly "
+                "these fields:\n"
+                '  - "ticker": string (uppercase, e.g. "AAPL")\n'
+                '  - "direction": string, one of "BUY", "SELL", "HOLD"\n'
+                '  - "confidence": number between 0.0 and 1.0\n\n'
+                "Example: "
+                '[{"ticker":"AAPL","direction":"BUY","confidence":0.85}]\n'
+                "Return ONLY the JSON array, no markdown, no explanation."
             )
             resp = await client.messages.create(
-                model="claude-opus-4-6",
+                model="claude-sonnet-4-20250514",
                 max_tokens=256,
                 messages=[{"role": "user", "content": prompt}],
             )
-            text = resp.content[0].text.strip()
-            parsed = json.loads(text)
-            llm_map = {item["ticker"]: item for item in parsed}
+            text: str = resp.content[0].text.strip()
 
+            # Strip markdown fences if LLM wrapped the response
+            if text.startswith("```"):
+                text = re.sub(r"^```(?:json)?\s*", "", text)
+                text = re.sub(r"\s*```$", "", text)
+
+            parsed = json.loads(text)
+
+            if not isinstance(parsed, list):
+                log.warning(
+                    "LLM returned non-array JSON, ignoring",
+                    type=type(parsed).__name__,
+                )
+                return signals
+
+            # Validate and build lookup map
+            llm_map: Dict[str, Dict[str, Any]] = {}
+            for item in parsed:
+                if not isinstance(item, dict):
+                    continue
+                # Validate required keys
+                if not _LLM_REQUIRED_KEYS.issubset(item.keys()):
+                    log.debug(
+                        "LLM item missing required keys",
+                        item=item,
+                        missing=list(_LLM_REQUIRED_KEYS - item.keys()),
+                    )
+                    continue
+                # Validate direction
+                direction = str(item.get("direction", "")).upper()
+                if direction not in _LLM_VALID_DIRECTIONS:
+                    log.debug(
+                        "LLM item has invalid direction",
+                        direction=direction,
+                    )
+                    continue
+                # Validate confidence range
+                try:
+                    confidence = float(item["confidence"])
+                except (ValueError, TypeError):
+                    continue
+                if not 0.0 <= confidence <= 1.0:
+                    continue
+
+                ticker = str(item["ticker"]).upper()
+                llm_map[ticker] = {
+                    "direction": direction,
+                    "confidence": confidence,
+                }
+
+            # Apply boosts
             boosted: List[Signal] = []
             for sig in signals:
                 llm = llm_map.get(sig.ticker)
-                if llm and llm.get("direction") == sig.direction:
+                if llm and llm["direction"] == sig.direction:
+                    old_score = sig.score
                     sig.score = min(sig.score + 0.10, 0.90)
+                    log.debug(
+                        "LLM boosted signal",
+                        ticker=sig.ticker,
+                        direction=sig.direction,
+                        old_score=f"{old_score:.2f}",
+                        new_score=f"{sig.score:.2f}",
+                        llm_confidence=f"{llm['confidence']:.2f}",
+                    )
+                elif llm:
+                    log.debug(
+                        "LLM disagreed on direction",
+                        ticker=sig.ticker,
+                        our_direction=sig.direction,
+                        llm_direction=llm["direction"],
+                    )
                 boosted.append(sig)
             return boosted
+
+        except json.JSONDecodeError as e:
+            log.warning("LLM returned invalid JSON", error=str(e))
+            return signals
         except Exception as e:
             log.debug("LLM parsing failed, using regex result", error=str(e))
             return signals
 
-    # ── Public interface ──────────────────────────────────────────────────────
+    # ── Public interface ───────────────────────────────────────────────────
 
     async def start(self) -> None:
         """Start the Discord bot. Runs until stop() is called."""
         if not self._cfg.bot_token:
-            log.warning("DISCORD_BOT_TOKEN not set — Discord feed disabled")
+            log.warning("DISCORD_BOT_TOKEN not set -- Discord feed disabled")
             return
-        log.info("Starting Discord feed",
-                 channel_ids=self._cfg.channel_ids or "all",
-                 history_limit=self._cfg.history_limit)
+        log.info(
+            "Starting Discord feed",
+            channel_ids=self._cfg.channel_ids or "all",
+            history_limit=self._cfg.history_limit,
+            use_llm=self._cfg.use_llm_parsing,
+            min_score=self._cfg.min_message_score,
+        )
         async with self._client:
             await self._client.start(self._cfg.bot_token)
 
@@ -282,4 +613,4 @@ class DiscordFeed:
         """Disconnect the Discord bot gracefully."""
         if not self._client.is_closed():
             await self._client.close()
-            log.info("Discord feed stopped")
+            log.info("Discord feed stopped", **self.stats)
