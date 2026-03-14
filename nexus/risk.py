@@ -5,6 +5,9 @@ v3 changes:
   - RiskLimits.check() tracks long vs short exposure separately
   - signal_direction parameter routes the correct exposure check
   - Removed var_confidence dead code
+  - Cash check skipped for SHORT signals (shorts use margin, not cash capital)
+  - Peak equity tracking for portfolio drawdown circuit breaker
+  - Volatility scaling: reduces max_position_pct when VIX-equivalent is high
 """
 from __future__ import annotations
 
@@ -66,24 +69,56 @@ class RiskLimits:
         self._cfg = config or get_config().risk
         self._halted = False
         self._daily_pnl = 0.0
+        self._peak_equity: float = 0.0
+        self._current_equity: float = 0.0
 
     def update_daily_pnl(self, pnl: float, portfolio_value: float = 0.0) -> None:
         self._daily_pnl = pnl
-        if portfolio_value > 0 and pnl < 0:
-            loss_pct = abs(pnl) / portfolio_value
-            if loss_pct > self._cfg.daily_loss_halt_pct:
-                self._halted = True
-                log.warning("Daily loss halt triggered",
-                            loss_pct=f"{loss_pct:.1%}",
-                            threshold=f"{self._cfg.daily_loss_halt_pct:.1%}")
+        if portfolio_value > 0:
+            self._current_equity = portfolio_value
+            if portfolio_value > self._peak_equity:
+                self._peak_equity = portfolio_value
+            if pnl < 0:
+                loss_pct = abs(pnl) / portfolio_value
+                if loss_pct > self._cfg.daily_loss_halt_pct:
+                    self._halted = True
+                    log.warning("Daily loss halt triggered",
+                                loss_pct=f"{loss_pct:.1%}",
+                                threshold=f"{self._cfg.daily_loss_halt_pct:.1%}")
+
+            # Portfolio drawdown circuit breaker: halt if > 15% off peak
+            if self._peak_equity > 0:
+                drawdown = 1.0 - (portfolio_value / self._peak_equity)
+                if drawdown > 0.15 and not self._halted:
+                    self._halted = True
+                    log.warning("Portfolio drawdown halt triggered",
+                                drawdown=f"{drawdown:.1%}", peak=f"${self._peak_equity:,.0f}")
 
     def reset_daily(self) -> None:
+        """Reset intraday halt. Does NOT reset peak equity (that's a portfolio-level stat)."""
         self._halted = False
         self._daily_pnl = 0.0
 
     @property
     def is_halted(self) -> bool:
         return self._halted
+
+    @property
+    def current_drawdown(self) -> float:
+        """Current drawdown from peak equity (0.0–1.0)."""
+        if self._peak_equity <= 0:
+            return 0.0
+        return max(0.0, 1.0 - (self._current_equity / self._peak_equity))
+
+    def _volatility_scale(self, portfolio_value: float) -> float:
+        """Scale position sizes down when realized vol is high.
+
+        Returns a multiplier in [0.5, 1.0].
+        Uses portfolio drawdown as a vol proxy when VIX is unavailable.
+        """
+        dd = self.current_drawdown
+        # At 0% DD → scale=1.0; at 10% DD → scale=0.5; floor at 0.5
+        return max(0.5, 1.0 - dd * 5.0)
 
     def check(self, signal_score: float, portfolio_value: float, cash: float,
               open_positions: List, proposed_shares: int,
@@ -107,6 +142,12 @@ class RiskLimits:
                 f"Max positions ({cfg.max_open_positions}) reached")
 
         proposed_value = proposed_shares * entry_price
+
+        # Volatility scaling: shrink position in stressed markets
+        vol_scale = self._volatility_scale(portfolio_value)
+        if vol_scale < 1.0:
+            proposed_shares = max(1, int(proposed_shares * vol_scale))
+            proposed_value = proposed_shares * entry_price
 
         # Per-position size cap
         if portfolio_value > 0 and proposed_value / portfolio_value > cfg.max_position_pct:
@@ -134,10 +175,11 @@ class RiskLimits:
                     return RiskCheckResult(False,
                         f"Short exposure {new_short_exp:.1%} > limit {cfg.max_short_exposure_pct:.1%}")
 
-        if proposed_value > cash * 0.95:
+        # Cash check: only applies to longs (shorts use margin, not cash capital)
+        if signal_direction == "BUY" and proposed_value > cash * 0.95:
             max_affordable = int(cash * 0.95 / max(entry_price, 0.01))
             if max_affordable < 1:
-                return RiskCheckResult(False, "Insufficient cash")
+                return RiskCheckResult(False, "Insufficient cash for long")
             return RiskCheckResult(True, "Approved (cash-limited)",
                                    adjusted_shares=max_affordable)
 

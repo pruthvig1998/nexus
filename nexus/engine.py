@@ -5,12 +5,15 @@ v3 changes:
   - _execute(): covers short before going long on BUY signal
   - _check_exits(): correct stop/target logic for SHORT positions
   - _poll_fills(): records LONG/SHORT side in tracker
+  - _scan_cycle(): auto-resets daily halt at midnight
+  - _execute(): tracks close/flip orders in _pending with side="CLOSE"
+  - _execute(): scales position size down during portfolio drawdown
 """
 from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum, auto
 from typing import Any, Callable, Dict, List, Optional
 
@@ -111,6 +114,12 @@ class NEXUSEngine:
         # Local position cache: ticker → Position (for routing decisions)
         self._positions: Dict[str, Position] = {}
 
+        # Daily reset tracking
+        self._last_reset_date: Optional[date] = None
+
+        # Drawdown tracking for position size scaling
+        self._peak_equity: float = 0.0
+
     # ── Public interface ──────────────────────────────────────────────────────
 
     @property
@@ -172,7 +181,20 @@ class NEXUSEngine:
         if self._broker.is_connected:
             try:
                 acct = await self._broker.get_account_info()
+
+                # Auto-reset daily halt at midnight
+                today = date.today()
+                if self._last_reset_date != today:
+                    self._risk.reset_daily()
+                    self._last_reset_date = today
+                    log.info("Daily risk counters reset", date=today.isoformat())
+
                 self._risk.update_daily_pnl(acct.day_pnl, acct.portfolio_value)
+
+                # Track peak equity for drawdown scaling
+                if acct.portfolio_value > self._peak_equity:
+                    self._peak_equity = acct.portfolio_value
+
                 # Refresh local position cache
                 positions_list = await self._broker.get_positions()
                 self._positions = {p.ticker: p for p in positions_list}
@@ -284,13 +306,33 @@ class NEXUSEngine:
                 reasoning=signal.reasoning,
             )
 
+            # Drawdown-based position size scaling: reduce size linearly as
+            # portfolio falls from peak. At 5% DD → 50% size, at 10%+ DD → 25%.
+            if self._peak_equity > 0 and acct.portfolio_value < self._peak_equity:
+                dd_pct = 1.0 - (acct.portfolio_value / self._peak_equity)
+                scale = max(0.25, 1.0 - dd_pct * 10)  # 10% DD → scale=0.0 floored at 0.25
+                final_shares = max(1, int(final_shares * scale))
+                if dd_pct > 0.01:
+                    log.debug("Drawdown size scaling", dd=f"{dd_pct:.1%}", scale=f"{scale:.2f}")
+
             if signal.direction == "BUY":
                 if existing and existing.side == "SHORT":
-                    # Cover the short before going long
+                    # Cover the short before going long — track in pending so
+                    # we know the fill happened before re-evaluating
                     log.info("Covering short before going long", ticker=signal.ticker)
-                    await self._broker.close_short(signal.ticker, existing.shares,
-                                                   signal.limit_price or signal.entry_price)
+                    close_result = await self._broker.close_short(
+                        signal.ticker, existing.shares,
+                        signal.limit_price or signal.entry_price,
+                    )
                     del self._positions[signal.ticker]
+                    if close_result and close_result.order_id:
+                        self._pending[close_result.order_id] = _PendingOrder(
+                            order_id=close_result.order_id,
+                            trade_id="",  # close — no new trade_id
+                            ticker=signal.ticker,
+                            shares=existing.shares,
+                            side="CLOSE",
+                        )
                     return  # Re-evaluate next cycle to open the long
 
                 elif existing and existing.side == "LONG":
@@ -306,13 +348,21 @@ class NEXUSEngine:
 
             else:  # SELL signal
                 if existing and existing.side == "LONG":
-                    # Close long before going short
+                    # Close long before going short — track the close order
                     log.info("Closing long before going short", ticker=signal.ticker)
-                    await self._broker.place_order(
+                    close_result = await self._broker.place_order(
                         ticker=signal.ticker, side=OrderSide.SELL, qty=existing.shares,
                         order_type=OrderType.MARKET,
                     )
                     del self._positions[signal.ticker]
+                    if close_result and close_result.order_id:
+                        self._pending[close_result.order_id] = _PendingOrder(
+                            order_id=close_result.order_id,
+                            trade_id="",  # close — no new trade_id
+                            ticker=signal.ticker,
+                            shares=existing.shares,
+                            side="CLOSE",
+                        )
                     return  # Re-evaluate next cycle to open the short
 
                 elif existing and existing.side == "SHORT":
@@ -369,11 +419,20 @@ class NEXUSEngine:
 
                 if status.status == OrderStatus.FILLED:
                     await self._bus.publish(EventType.ORDER_FILLED, status)
-                    await self._bus.publish(EventType.POSITION_OPENED, {
-                        "trade_id": pending.trade_id,
-                        "ticker": pending.ticker,
-                        "side": pending.side,
-                    })
+                    if pending.side != "CLOSE":
+                        await self._bus.publish(EventType.POSITION_OPENED, {
+                            "trade_id": pending.trade_id,
+                            "ticker": pending.ticker,
+                            "side": pending.side,
+                        })
+                    else:
+                        await self._bus.publish(EventType.POSITION_CLOSED, {
+                            "trade_id": pending.trade_id,
+                            "ticker": pending.ticker,
+                            "side": "CLOSE",
+                            "pnl": None,
+                            "reason": "flip",
+                        })
                     del self._pending[order_id]
 
                 elif status.status in (OrderStatus.CANCELLED, OrderStatus.REJECTED):
