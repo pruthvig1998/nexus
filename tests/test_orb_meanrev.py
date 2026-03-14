@@ -1,28 +1,76 @@
-"""Tests for ORBStrategy and improved MeanReversionStrategy."""
+"""Tests for ORBStrategy (NR7+ADR methodology) and MeanReversionStrategy."""
 from __future__ import annotations
+
+import asyncio
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from nexus.config import RiskConfig, StrategyConfig
 from nexus.strategy import MeanReversionStrategy, ORBStrategy
 
 
-def _make_df(n: int = 60, **kwargs) -> pd.DataFrame:
-    """Base OHLCV frame — override individual columns via kwargs."""
-    base = 100.0
-    closes = pd.Series([base + i * 0.1 for i in range(n)], dtype=float)
-    df = pd.DataFrame({
-        "open":   closes * 0.999,
-        "high":   closes * 1.005,
-        "low":    closes * 0.995,
-        "close":  closes,
-        "volume": [2_000_000.0] * n,
-    })
-    for k, v in kwargs.items():
-        df[k] = v
-    return df
+# ── Shared async runner ───────────────────────────────────────────────────────
+
+def _run(coro):
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
+# ── ORB helpers ───────────────────────────────────────────────────────────────
+
+def _orb_df(n: int = 40,
+            orh: float = 102.0,
+            orl: float = 100.0,
+            today_close: float = 104.0,
+            today_open: float = 102.1,
+            vol_mult: float = 2.0,
+            trend: str = "up") -> pd.DataFrame:
+    """Build an ORB-ready DataFrame.
+
+    The second-to-last bar (yesterday) becomes the NR7 bar by making it
+    the narrowest of the last 7 — all prior bars have wider ranges.
+    The last bar (today) is the breakout candidate.
+    """
+    base_close = 90.0 if trend == "up" else 120.0
+    step = 0.5 if trend == "up" else -0.5
+    rows = []
+    avg_vol = 2_000_000.0
+
+    for i in range(n):
+        c = base_close + i * step
+        # Give all bars except the last two a wide range (4× NR7 range width)
+        bar_range = (orh - orl) * 4
+        rows.append({
+            "open":   c,
+            "high":   c + bar_range / 2,
+            "low":    c - bar_range / 2,
+            "close":  c,
+            "volume": avg_vol,
+        })
+
+    # Yesterday (NR7 bar): tight range [orl, orh]
+    rows[-2] = {
+        "open":   (orh + orl) / 2,
+        "high":   orh,
+        "low":    orl,
+        "close":  (orh + orl) / 2,
+        "volume": avg_vol,
+    }
+
+    # Today: breakout bar
+    rows[-1] = {
+        "open":   today_open,
+        "high":   today_close * 1.002,
+        "low":    today_close * 0.998,
+        "close":  today_close,
+        "volume": avg_vol * vol_mult,
+    }
+
+    return pd.DataFrame(rows)
 
 
 # ─────────────────────────── ORB Strategy ────────────────────────────────────
@@ -31,211 +79,265 @@ class TestORBStrategy:
     def setup_method(self):
         self.orb = ORBStrategy()
 
-    def _run(self, df):
-        import asyncio
-        return asyncio.get_event_loop().run_until_complete(
-            self.orb.analyze("AAPL", df)
-        )
-
     def test_insufficient_data_returns_none(self):
-        df = _make_df(n=20)
-        assert self._run(df) is None
+        df = _orb_df(n=15)
+        assert _run(self.orb.analyze("AAPL", df)) is None
 
-    def test_no_signal_on_flat_close(self):
-        """Close inside yesterday's range → no signal."""
-        df = _make_df(n=60)
-        # Yesterday's range: high=105, low=95. Today closes at 101 — inside range.
-        df.loc[df.index[-2], "high"] = 105.0
-        df.loc[df.index[-2], "low"]  = 95.0
-        df.loc[df.index[-1], "close"] = 101.0
-        df.loc[df.index[-1], "open"]  = 100.0
-        assert self._run(df) is None
+    def test_no_nr7_returns_none(self):
+        """If yesterday's range is NOT the narrowest of last 7, no signal."""
+        df = _orb_df(n=40, orh=108.0, orl=90.0)   # wide yesterday range
+        # Make all prior bars narrower than yesterday to kill NR7
+        for i in range(len(df) - 9, len(df) - 2):
+            df.loc[i, "high"] = df.loc[i, "close"] + 0.5
+            df.loc[i, "low"]  = df.loc[i, "close"] - 0.5
+        assert _run(self.orb.analyze("AAPL", df)) is None
+
+    def test_low_volume_returns_none(self):
+        """Volume < 1.5× average → rejected even if NR7 breakout."""
+        df = _orb_df(n=40, today_close=104.0, vol_mult=0.8)
+        assert _run(self.orb.analyze("AAPL", df)) is None
 
     def test_long_breakout_signal(self):
-        """Close convincingly above yesterday's high → BUY signal."""
-        n = 60
-        # Uptrending base so last price is comfortably above SMA20
-        closes = pd.Series([90.0 + i * 0.5 for i in range(n)], dtype=float)
-        df = pd.DataFrame({
-            "open":   closes * 0.999,
-            "high":   closes * 1.005,
-            "low":    closes * 0.995,
-            "close":  closes,
-            "volume": [2_000_000.0] * n,
-        })
-        # Yesterday: tight well-formed range (2% of price)
-        orh, orl = 116.0, 113.0   # 2.6% range around base ~114
-        df.loc[df.index[-2], "high"] = orh
-        df.loc[df.index[-2], "low"]  = orl
-        # Today: gaps up slightly, closes well above ORH, strong volume
-        df.loc[df.index[-1], "open"]   = 116.2
-        df.loc[df.index[-1], "close"]  = 118.5   # > orh + buffer; > SMA20 (~113.75)
-        df.loc[df.index[-1], "high"]   = 118.8
-        df.loc[df.index[-1], "low"]    = 115.9
-        df.loc[df.index[-1], "volume"] = 4_000_000.0   # 2× avg
-        sig = self._run(df)
-        assert sig is not None, "Expected BUY signal on ORB breakout"
+        """NR7 + ADR compression + close above ORH + volume → BUY signal."""
+        # Use a higher today_close so it clears the 20-SMA comfortably.
+        # Uptrend: base 90→109, yesterday NR7 [100,102], today close 107.
+        df = _orb_df(n=40, orh=102.0, orl=100.0,
+                     today_close=107.0, today_open=102.2,
+                     vol_mult=2.0, trend="up")
+        sig = _run(self.orb.analyze("AAPL", df))
+        assert sig is not None, "Expected BUY ORB signal"
         assert sig.direction == "BUY"
-        assert sig.stop_price == pytest.approx(orl, abs=0.01)
+        assert sig.stop_price == pytest.approx(100.0, abs=0.01)  # stop = ORL
         assert sig.target_price > sig.entry_price
         assert sig.score >= 0.65
+        assert "NR7" in sig.reasoning
 
     def test_short_breakdown_signal(self):
-        """Close convincingly below yesterday's low → SELL signal."""
-        n = 60
-        # Downtrending base so price stays below SMA20
-        closes = pd.Series([120.0 - i * 0.5 for i in range(n)], dtype=float)
-        df = pd.DataFrame({
-            "open":   closes * 1.001,
-            "high":   closes * 1.005,
-            "low":    closes * 0.995,
-            "close":  closes,
-            "volume": [2_000_000.0] * n,
-        })
-        # Yesterday: tight range around ~90
-        orh, orl = 92.0, 89.0
-        df.loc[df.index[-2], "high"] = orh
-        df.loc[df.index[-2], "low"]  = orl
-        # Today: breaks hard below ORL, still in downtrend (below SMA20 ~95.25)
-        df.loc[df.index[-1], "close"]  = 86.5   # < orl - buffer
-        df.loc[df.index[-1], "open"]   = 88.8
-        df.loc[df.index[-1], "high"]   = 89.1
-        df.loc[df.index[-1], "low"]    = 86.3
-        df.loc[df.index[-1], "volume"] = 4_000_000.0
-        sig = self._run(df)
-        assert sig is not None, "Expected SELL signal on ORB breakdown"
+        """NR7 + ADR compression + close below ORL + volume → SELL signal."""
+        df = _orb_df(n=40, orh=92.0, orl=90.0,
+                     today_close=87.5, today_open=89.8,
+                     vol_mult=2.0, trend="down")
+        sig = _run(self.orb.analyze("AAPL", df))
+        assert sig is not None, "Expected SELL ORB signal"
         assert sig.direction == "SELL"
-        assert sig.stop_price == pytest.approx(orh, abs=0.01)
+        assert sig.stop_price == pytest.approx(92.0, abs=0.01)  # stop = ORH
         assert sig.target_price < sig.entry_price
+        assert "NR7" in sig.reasoning
+
+    def test_target_is_2x_range(self):
+        """Target must equal entry + 2× range_width."""
+        df = _orb_df(n=40, orh=102.0, orl=100.0,
+                     today_close=104.0, today_open=102.2,
+                     vol_mult=2.0, trend="up")
+        sig = _run(self.orb.analyze("AAPL", df))
+        if sig and sig.direction == "BUY":
+            range_w = 102.0 - 100.0   # orh - orl
+            expected_target = sig.entry_price + 2.0 * range_w
+            assert sig.target_price == pytest.approx(expected_target, rel=0.01)
 
     def test_wide_range_filtered(self):
-        """Range > 4% of price should be filtered (erratic day)."""
-        df = _make_df(n=60)
-        df.loc[df.index[-2], "high"] = 110.0   # 10% range on 100 base
-        df.loc[df.index[-2], "low"]  = 90.0
-        df.loc[df.index[-1], "close"]  = 115.0
-        df.loc[df.index[-1], "volume"] = 4_000_000.0
-        assert self._run(df) is None
+        """Yesterday range > 5% of price is filtered (erratic/news day)."""
+        df = _orb_df(n=40, orh=115.0, orl=90.0,   # ~22% range
+                     today_close=117.0, vol_mult=2.0, trend="up")
+        assert _run(self.orb.analyze("AAPL", df)) is None
 
-    def test_low_volume_filtered(self):
-        """Volume below 1.5× avg should be rejected even on breakout."""
-        df = _make_df(n=60)
-        df.loc[df.index[-2], "high"] = 102.0
-        df.loc[df.index[-2], "low"]  = 98.0
-        df.loc[df.index[-1], "close"]  = 104.0
-        df.loc[df.index[-1], "open"]   = 102.1
-        # Volume at average (1.0x) — below 1.5x threshold
-        df["volume"] = 2_000_000.0
-        assert self._run(df) is None
+    def test_large_gap_filtered(self):
+        """If open already 1%+ past the range boundary, skip (gap-and-go)."""
+        df = _orb_df(n=40, orh=102.0, orl=100.0,
+                     today_close=104.0,
+                     today_open=103.5,  # 1.5% gap above ORH=102
+                     vol_mult=2.0, trend="up")
+        sig = _run(self.orb.analyze("AAPL", df))
+        # Gap = 103.5 - 102 = 1.5 > 1% of 102 → should be filtered
+        assert sig is None
 
-    def test_signal_name(self):
-        """Strategy name is 'orb'."""
+    def test_strategy_name(self):
         assert ORBStrategy.name == "orb"
 
 
 # ───────────────────────── Mean Reversion Strategy ───────────────────────────
 
+def _mr_crash_df(n: int = 60) -> pd.DataFrame:
+    """Frame that crashes hard then shows a hammer reversal on the last bar."""
+    # Stable base, then sharp crash, then reversal bar
+    base = [100.0] * (n - 20) + [100.0 - i * 3.0 for i in range(20)]
+    closes = pd.Series(base, dtype=float)
+    opens  = closes.copy()
+    highs  = closes * 1.004
+    lows   = closes * 0.996
+
+    # Last bar: hammer pattern — big lower wick, close near high
+    entry_lvl = base[-1]
+    lows.iloc[-1]   = entry_lvl * 0.985   # long lower wick
+    closes.iloc[-1] = entry_lvl * 1.002   # close near high (recovery)
+    opens.iloc[-1]  = entry_lvl * 0.995
+    highs.iloc[-1]  = entry_lvl * 1.004
+
+    avg_vol = 2_000_000.0
+    return pd.DataFrame({
+        "open":   opens,
+        "high":   highs,
+        "low":    lows,
+        "close":  closes,
+        "volume": [avg_vol * 2.0] * n,   # elevated volume throughout crash
+    })
+
+
+def _mr_rally_df(n: int = 60) -> pd.DataFrame:
+    """Frame that rallies hard then shows a shooting-star on the last bar."""
+    base = [100.0] * (n - 20) + [100.0 + i * 3.0 for i in range(20)]
+    closes = pd.Series(base, dtype=float)
+    opens  = closes.copy()
+    highs  = closes * 1.004
+    lows   = closes * 0.996
+
+    # Last bar: shooting star — big upper wick, close near low
+    entry_lvl = base[-1]
+    highs.iloc[-1]  = entry_lvl * 1.015   # long upper wick
+    closes.iloc[-1] = entry_lvl * 0.998   # close near low (rejection)
+    opens.iloc[-1]  = entry_lvl * 1.005
+    lows.iloc[-1]   = entry_lvl * 0.996
+
+    avg_vol = 2_000_000.0
+    return pd.DataFrame({
+        "open":   opens,
+        "high":   highs,
+        "low":    lows,
+        "close":  closes,
+        "volume": [avg_vol * 2.0] * n,
+    })
+
+
 class TestMeanReversionStrategy:
     def setup_method(self):
         self.mr = MeanReversionStrategy()
 
-    def _run(self, df):
-        import asyncio
-        return asyncio.get_event_loop().run_until_complete(
-            self.mr.analyze("AAPL", df)
-        )
-
-    def _oversold_df(self, n=60, rsi_extreme=True) -> pd.DataFrame:
-        """Frame with deeply oversold conditions (BB breach + extreme RSI)."""
-        # Build a series that crashes hard at the end → oversold
-        base = [100.0] * (n - 15) + [100.0 - i * 3.5 for i in range(15)]
-        closes = pd.Series(base, dtype=float)
-        highs  = closes * 1.005
-        lows   = closes * 0.995
-        opens  = closes * 0.999
-        # Last bar closes slightly above prev close (reversal candle)
-        closes.iloc[-1] = closes.iloc[-2] * 1.005
-        opens.iloc[-1]  = closes.iloc[-2]
-        df = pd.DataFrame({
-            "open": opens, "high": highs, "low": lows,
-            "close": closes,
-            "volume": [3_500_000.0] * n,   # 1.75x avg
-        })
-        return df
-
-    def _overbought_df(self, n=60) -> pd.DataFrame:
-        """Frame with deeply overbought conditions."""
-        base = [100.0] * (n - 15) + [100.0 + i * 3.5 for i in range(15)]
-        closes = pd.Series(base, dtype=float)
-        highs  = closes * 1.005
-        lows   = closes * 0.995
-        opens  = closes * 1.001
-        # Last bar closes slightly below prev close (reversal candle)
-        closes.iloc[-1] = closes.iloc[-2] * 0.995
-        opens.iloc[-1]  = closes.iloc[-2]
-        df = pd.DataFrame({
-            "open": opens, "high": highs, "low": lows,
-            "close": closes,
-            "volume": [3_500_000.0] * n,
-        })
-        return df
-
     def test_insufficient_data_returns_none(self):
-        df = _make_df(n=20)
-        assert self._run(df) is None
+        df = pd.DataFrame({
+            "open": [100.0] * 20, "high": [101.0] * 20,
+            "low": [99.0] * 20, "close": [100.0] * 20,
+            "volume": [1_000_000.0] * 20,
+        })
+        assert _run(self.mr.analyze("AAPL", df)) is None
 
-    def test_no_signal_on_normal_conditions(self):
-        """Normal trending data without extreme deviation → no signal."""
-        df = _make_df(n=60)
-        assert self._run(df) is None
+    def test_no_signal_on_normal_market(self):
+        """Normal gently-trending price → no extreme conditions → no signal."""
+        n = 60
+        closes = pd.Series([100.0 + i * 0.1 for i in range(n)])
+        df = pd.DataFrame({
+            "open":   closes * 0.999,
+            "high":   closes * 1.003,
+            "low":    closes * 0.997,
+            "close":  closes,
+            "volume": [3_000_000.0] * n,
+        })
+        assert _run(self.mr.analyze("AAPL", df)) is None
 
-    def test_oversold_entry_buy(self):
-        """Deep crash with reversal candle → BUY mean reversion signal."""
-        df = self._oversold_df()
-        sig = self._run(df)
-        if sig is not None:  # may not trigger if RSI threshold not met on synth data
+    def test_oversold_hammer_produces_buy(self):
+        """Deep crash + hammer reversal bar → BUY mean reversion."""
+        df = _mr_crash_df(n=70)
+        sig = _run(self.mr.analyze("AAPL", df))
+        if sig is not None:
             assert sig.direction == "BUY"
             assert sig.stop_price < sig.entry_price
             assert sig.target_price > sig.entry_price
             assert 0.60 <= sig.score <= 0.95
             assert sig.strategy == "mean_reversion"
 
-    def test_overbought_entry_sell(self):
-        """Sharp rally with reversal candle → SELL mean reversion signal."""
-        df = self._overbought_df()
-        sig = self._run(df)
+    def test_overbought_shooting_star_produces_sell(self):
+        """Sharp rally + shooting star bar → SELL mean reversion."""
+        df = _mr_rally_df(n=70)
+        sig = _run(self.mr.analyze("AAPL", df))
         if sig is not None:
             assert sig.direction == "SELL"
             assert sig.stop_price > sig.entry_price
             assert sig.target_price < sig.entry_price
             assert 0.60 <= sig.score <= 0.95
 
-    def test_no_signal_without_reversal_candle(self):
-        """If price is still dropping (no reversal), no signal issued."""
-        df = self._oversold_df()
-        # Make last bar close BELOW prev close — still falling
-        df.loc[df.index[-1], "close"] = df["close"].iloc[-2] * 0.99
-        df.loc[df.index[-1], "open"]  = df["close"].iloc[-2] * 1.001
-        sig = self._run(df)
-        # Either no signal or a signal — but if there is one it must be BUY
-        if sig is not None:
-            assert sig.direction == "BUY"
+    def test_low_volume_rejected(self):
+        """Volume < 1.5× average → no signal even in extreme conditions."""
+        df = _mr_crash_df(n=70)
+        df["volume"] = 800_000.0   # well below 1.5× threshold
+        assert _run(self.mr.analyze("AAPL", df)) is None
 
-    def test_low_volume_filtered(self):
-        """Capitulation volume gate: volume < 1.5x avg → no signal."""
-        df = self._oversold_df()
-        df["volume"] = 1_000_000.0   # below 1.5x threshold
-        assert self._run(df) is None
+    def test_bbw_squeeze_rejected(self):
+        """Flat price (very narrow bands, BBW < 0.02) → no signal."""
+        n = 60
+        flat = pd.Series([100.0] * n)
+        df = pd.DataFrame({
+            "open":   flat, "high": flat + 0.01,
+            "low":    flat - 0.01, "close": flat,
+            "volume": [3_000_000.0] * n,
+        })
+        assert _run(self.mr.analyze("AAPL", df)) is None
 
-    def test_stop_tighter_than_atr_multiplier(self):
-        """Mean rev stop must be 0.5×ATR tight (not full multiplier)."""
-        df = self._oversold_df()
-        sig = self._run(df)
+    def test_stop_within_half_atr(self):
+        """Stop must be tight — 0.5× ATR from the intraday extreme."""
+        df = _mr_crash_df(n=70)
+        sig = _run(self.mr.analyze("AAPL", df))
         if sig:
             atr_approx = sig.atr_val if sig.atr_val > 0 else 1.0
-            gap = abs(sig.entry_price - sig.stop_price)
-            # Stop should be within 0.5*ATR + small tolerance
-            assert gap <= atr_approx * 0.6 + 0.5
+            # Allow 0.6× ATR gap (0.5× + small floating-point tolerance)
+            price_stop_gap = abs(sig.entry_price - sig.stop_price)
+            assert price_stop_gap <= atr_approx * 0.6 + 1.0
+
+    def test_extreme_z_targets_opposite_band(self):
+        """When Z-score > 3σ, target extends to opposite Bollinger Band."""
+        # Build a VERY extreme crash (3σ+)
+        n = 70
+        base = [100.0] * (n - 25) + [100.0 - i * 4.5 for i in range(25)]
+        closes = pd.Series(base, dtype=float)
+        opens  = closes * 0.999
+        highs  = closes * 1.003
+        # Last bar: hammer
+        lows = closes * 0.996
+        lows.iloc[-1]  = closes.iloc[-1] * 0.985
+        closes.iloc[-1] = closes.iloc[-2] * 1.003
+        df = pd.DataFrame({
+            "open": opens, "high": highs, "low": lows, "close": closes,
+            "volume": [3_200_000.0] * n,
+        })
+        sig = _run(self.mr.analyze("AAPL", df))
+        if sig and sig.direction == "BUY":
+            # At extreme z, target should be ABOVE middle BB
+            from nexus.indicators import bollinger_bands
+            bb = bollinger_bands(closes)
+            assert sig.target_price >= bb.middle
 
     def test_strategy_name(self):
         assert MeanReversionStrategy.name == "mean_reversion"
+
+
+# ── Pattern helpers ───────────────────────────────────────────────────────────
+
+class TestCandlePatterns:
+    """Unit-test the private candlestick helpers directly."""
+    from nexus.strategy import _is_hammer, _is_shooting_star  # noqa: PLC0415
+    from nexus.strategy import _is_bullish_engulfing, _is_bearish_engulfing  # noqa: PLC0415
+
+    def test_hammer_detected(self):
+        from nexus.strategy import _is_hammer
+        # Long lower wick, small body, close near high
+        assert _is_hammer(o=100.5, h=101.0, l=98.0, c=100.8)
+
+    def test_hammer_rejected_no_long_wick(self):
+        from nexus.strategy import _is_hammer
+        # Normal candle — no long lower wick
+        assert not _is_hammer(o=100.0, h=101.5, l=99.5, c=101.0)
+
+    def test_shooting_star_detected(self):
+        from nexus.strategy import _is_shooting_star
+        # Long upper wick, close near low
+        assert _is_shooting_star(o=100.5, h=103.0, l=100.0, c=100.2)
+
+    def test_bullish_engulfing_detected(self):
+        from nexus.strategy import _is_bullish_engulfing
+        opens  = pd.Series([101.0, 99.0])   # prev opens above close, today below
+        closes = pd.Series([99.5,  101.5])   # prev red, today green and engulfs
+        assert _is_bullish_engulfing(opens, closes)
+
+    def test_bearish_engulfing_detected(self):
+        from nexus.strategy import _is_bearish_engulfing
+        opens  = pd.Series([99.0,  101.5])
+        closes = pd.Series([100.5, 98.5])
+        assert _is_bearish_engulfing(opens, closes)

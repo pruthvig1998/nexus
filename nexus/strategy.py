@@ -25,8 +25,8 @@ import pandas as pd
 from nexus.config import RiskConfig, StrategyConfig, get_config
 from nexus.indicators import (
     ATRResult, BollingerResult, MACDResult, RSIResult,
-    atr, bollinger_bands, dynamic_limit_price, golden_cross,
-    macd, rsi, sma, volume_ratio,
+    adr, atr, bollinger_bands, dynamic_limit_price, golden_cross,
+    macd, rsi, rsi_series, sma, volume_ratio,
 )
 from nexus.logger import get_logger
 
@@ -220,6 +220,8 @@ class MomentumStrategy:
             return None
 
 
+# ── Private helpers ───────────────────────────────────────────────────────────
+
 def _zscore(series: pd.Series, period: int = 20) -> float:
     """Z-score of the last value relative to a rolling window."""
     if len(series) < period:
@@ -231,24 +233,157 @@ def _zscore(series: pd.Series, period: int = 20) -> float:
     return float((series.iloc[-1] - window.mean()) / std)
 
 
+def _is_nr7(highs: pd.Series, lows: pd.Series) -> bool:
+    """Toby Crabel NR7: True if the second-to-last bar (yesterday) has the
+    narrowest high-low range of the last 7 bars (including itself).
+
+    NR7 signals volatility compression — the market is 'coiling' and a
+    breakout expansion is likely on the following bar.
+    """
+    if len(highs) < 8:
+        return False
+    # Bars [-8:-1] = the 7 bars ending at "yesterday" (df.iloc[-2])
+    ranges = (highs - lows).iloc[-8:-1]
+    yesterday_range = float((highs.iloc[-2] - lows.iloc[-2]))
+    return yesterday_range <= float(ranges.min()) + 1e-9
+
+
+def _adr_compression(highs: pd.Series, lows: pd.Series,
+                     adr_val: float, threshold: float = 0.65) -> bool:
+    """True if yesterday's range is compressed vs the Average Daily Range.
+
+    A range ≤ threshold × ADR confirms the market is tighter than usual,
+    reinforcing the NR7 coiling signal.
+    """
+    if adr_val <= 0:
+        return False
+    yesterday_range = float(highs.iloc[-2] - lows.iloc[-2])
+    return yesterday_range / adr_val <= threshold
+
+
+def _is_hammer(o: float, h: float, l: float, c: float) -> bool:
+    """Bullish hammer: long lower wick ≥ 2× body, close in top 60% of range,
+    minimal upper wick. Signals buyer absorption at lows."""
+    total_range = h - l
+    if total_range < 1e-6:
+        return False
+    body = abs(c - o)
+    lower_wick = min(o, c) - l
+    upper_wick = h - max(o, c)
+    close_pct = (c - l) / total_range          # 1.0 = at high
+    return (lower_wick >= 2.0 * max(body, 1e-6)
+            and close_pct >= 0.60
+            and upper_wick <= max(body, 1e-6))
+
+
+def _is_shooting_star(o: float, h: float, l: float, c: float) -> bool:
+    """Bearish shooting star: long upper wick ≥ 2× body, close in bottom 40%
+    of range. Mirror of hammer — signals seller rejection at highs."""
+    total_range = h - l
+    if total_range < 1e-6:
+        return False
+    body = abs(c - o)
+    upper_wick = h - max(o, c)
+    lower_wick = min(o, c) - l
+    close_pct = (c - l) / total_range
+    return (upper_wick >= 2.0 * max(body, 1e-6)
+            and close_pct <= 0.40
+            and lower_wick <= max(body, 1e-6))
+
+
+def _is_bullish_engulfing(opens: pd.Series, closes: pd.Series) -> bool:
+    """Bullish engulfing: today's green candle fully wraps around yesterday's
+    red candle — buyers overwhelmed sellers in a single bar."""
+    if len(opens) < 2:
+        return False
+    c_o, c_c = float(opens.iloc[-1]), float(closes.iloc[-1])
+    p_o, p_c = float(opens.iloc[-2]), float(closes.iloc[-2])
+    return (c_c > c_o                           # today green
+            and p_c < p_o                       # yesterday red
+            and c_c > p_o                       # engulfs prev high
+            and c_o < p_c)                      # engulfs prev low
+
+
+def _is_bearish_engulfing(opens: pd.Series, closes: pd.Series) -> bool:
+    """Bearish engulfing: today's red candle fully wraps around yesterday's
+    green candle — sellers overwhelmed buyers."""
+    if len(opens) < 2:
+        return False
+    c_o, c_c = float(opens.iloc[-1]), float(closes.iloc[-1])
+    p_o, p_c = float(opens.iloc[-2]), float(closes.iloc[-2])
+    return (c_c < c_o                           # today red
+            and p_c > p_o                       # yesterday green
+            and c_c < p_o                       # engulfs prev low
+            and c_o > p_c)                      # engulfs prev high
+
+
+def _rsi_divergence(closes: pd.Series, rsi_vals: pd.Series,
+                    lookback: int = 14) -> Optional[str]:
+    """Detect RSI divergence over the last `lookback` bars.
+
+    Bullish divergence: price makes lower low, RSI makes higher low
+      → hidden momentum; market is stabilizing despite lower prices.
+    Bearish divergence: price makes higher high, RSI makes lower high
+      → hidden weakness; momentum failing despite higher prices.
+
+    Returns "bullish", "bearish", or None.
+    """
+    if len(closes) < lookback + 1 or len(rsi_vals) < lookback + 1:
+        return None
+    p_window = closes.iloc[-(lookback + 1):-1]    # prior lookback bars
+    r_window = rsi_vals.iloc[-(lookback + 1):-1]
+    curr_p = float(closes.iloc[-1])
+    curr_r = float(rsi_vals.iloc[-1])
+
+    # Bullish: price at new low in window, RSI NOT at new low
+    if curr_p <= float(p_window.min()):
+        if curr_r > float(r_window.min()) + 1.0:  # 1-point tolerance
+            return "bullish"
+
+    # Bearish: price at new high in window, RSI NOT at new high
+    if curr_p >= float(p_window.max()):
+        if curr_r < float(r_window.max()) - 1.0:
+            return "bearish"
+
+    return None
+
+
 class MeanReversionStrategy:
-    """Multi-signal mean reversion: BB + RSI + Z-score + reversal confirmation.
+    """Institutional-grade mean reversion: BB + Z-score + RSI divergence +
+    candlestick pattern + capitulation volume + BBW expansion + trend bias.
 
-    Entry gates (ALL must pass):
-      1. Price beyond ±2.5σ Bollinger Band (extreme statistical deviation)
-      2. RSI < 25 oversold (buy) or > 75 overbought (sell)
-      3. |Z-score| ≥ 2.0 (price is statistically extreme vs 20d mean)
-      4. Reversal candle: today's close recovers vs yesterday's close
-         — prevents catching a falling knife mid-move
-      5. Capitulation volume: vol ≥ 1.5× 20d avg (exhaustion signature)
-      6. RSI momentum: RSI is turning (not still accelerating in extreme direction)
+    Research basis:
+    - Toby Crabel / Bollinger Band academic literature (Z-score gates)
+    - RSI divergence: confirms hidden strength/weakness before price confirms
+    - Candlestick patterns (hammer, engulfing): entry timing precision
+    - Volume profile theory: capitulation volume = exhaustion, not continuation
+    - BBW expansion gate: don't fade a squeeze breakout mid-explosion
 
-    Targets:
-      - Standard deviation (|z| 2.0–3.0): middle BB (mean reversion)
-      - Extreme deviation (|z| > 3.0): opposite BB band (full overshoot revert)
+    Entry gates (pass ALL for a valid signal)
+    ──────────────────────────────────────────
+    1. Price beyond ±2.0σ Bollinger Band (2× std breach required)
+    2. RSI < 25 oversold (buy) or > 75 overbought (sell)   [Crabel threshold]
+    3. |Z-score| ≥ 2.0 vs 20-day mean (statistically extreme)
+    4. Capitulation volume: vol ≥ 1.5× 20d avg (exhaustion signature)
+    5. BBW (bandwidth) not in squeeze: bb.bandwidth > 0.02 (price must have
+       already moved away from mean — don't fade a compression breakout)
+    6. Reversal candle OR RSI divergence (at least one of):
+       a) Hammer/shooting-star candlestick pattern on today's bar
+       b) Bullish/bearish RSI divergence over last 14 bars
+       c) RSI turning: today's RSI better than yesterday's (minimum requirement)
+    7. 200-SMA trend bias: longs preferred above 200 SMA, shorts below
 
-    Stop:
-      - 0.5× ATR beyond the extreme (tight — price should not extend further)
+    Targets
+    ───────
+    Standard (|z| 2.0–3.0)  → middle Bollinger Band (mean)
+    Extreme  (|z| > 3.0)    → opposite BB band (full overshoot reversion)
+    RSI divergence signal    → adds +0.10 to target (extended move likely)
+
+    Stop
+    ────
+    0.5× ATR below today's low (long) / above today's high (short)
+    Tight stop because: if price continues from an already-extreme level,
+    the mean-reversion thesis is invalidated immediately.
     """
     name = "mean_reversion"
 
@@ -257,67 +392,94 @@ class MeanReversionStrategy:
         self._s = cfg.strategy
         self._r = cfg.risk
 
-    async def analyze(self, ticker: str, df: pd.DataFrame) -> Optional[Signal]:
+    async def analyze(self, ticker: str, df: pd.DataFrame) -> Optional[Signal]:  # noqa: C901
         try:
-            if df is None or len(df) < 40:
+            if df is None or len(df) < 50:
                 return None
 
-            closes = df["close"]
-            highs = df["high"]
-            lows = df["low"]
-            opens = df["open"] if "open" in df.columns else closes
+            closes  = df["close"]
+            highs   = df["high"]
+            lows    = df["low"]
+            opens   = df["open"] if "open" in df.columns else closes
             volumes = df["volume"]
-            last_price = float(closes.iloc[-1])
-            prev_close = float(closes.iloc[-2])
+            last_price  = float(closes.iloc[-1])
+            last_open   = float(opens.iloc[-1])
+            last_high   = float(highs.iloc[-1])
+            last_low    = float(lows.iloc[-1])
 
             # ── Gate 1: Capitulation volume ───────────────────────────────────
             vol_r = volume_ratio(volumes, period=20)
-            if vol_r < 1.5:   # demand elevated volume for mean rev entries
+            if vol_r < 1.5:
                 return None
 
-            # ── Compute indicators ────────────────────────────────────────────
+            # ── Compute all indicators ────────────────────────────────────────
             rsi_result = rsi(closes, period=self._s.rsi_period)
-            rsi_prev = rsi(closes.iloc[:-1], period=self._s.rsi_period)
-            bb_result = bollinger_bands(closes, period=self._s.bb_period,
-                                        num_std=self._s.bb_std)
+            rsi_vals   = rsi_series(closes, period=self._s.rsi_period)
+            bb_result  = bollinger_bands(closes, period=self._s.bb_period,
+                                         num_std=self._s.bb_std)
             atr_result = atr(highs, lows, closes, period=self._s.atr_period,
                              entry_price=last_price,
                              multiplier=self._r.atr_stop_multiplier)
             z = _zscore(closes, period=20)
 
+            # ── Gate 2: BBW not in a squeeze (price already moved away from mean)
+            if bb_result.bandwidth < 0.02:
+                return None   # bands too narrow — this is a breakout setup, not MR
+
+            # ── Gate 3: Trend bias via 200-day SMA ────────────────────────────
+            sma200 = sma(closes, period=min(200, len(closes) - 1))
+            above_200 = sma200 is not None and last_price > sma200
+
+            # ── Gate 4: RSI divergence (optional enhancer) ────────────────────
+            divergence = _rsi_divergence(closes, rsi_vals, lookback=14)
+
             # ── Thresholds ────────────────────────────────────────────────────
-            oversold_threshold = self._s.rsi_mean_rev_oversold        # default 25
-            overbought_threshold = 100 - oversold_threshold            # default 75
-            deep_oversold  = rsi_result.value < oversold_threshold
-            deep_overbought = rsi_result.value > overbought_threshold
-            extreme_z = abs(z) > 3.0   # triggers extended target
+            oversold_thr  = self._s.rsi_mean_rev_oversold        # default 25
+            overbought_thr = 100 - oversold_thr                   # default 75
 
-            # ── LONG: oversold, below lower BB, price turning up ──────────────
+            # ── LONG: oversold + below lower BB + statistically extreme ───────
             if (bb_result.below_lower
-                    and deep_oversold
-                    and z < -2.0             # statistically extreme
-                    and last_price > prev_close  # reversal candle: price recovering
-                    and rsi_result.value >= rsi_prev.value - 2):  # RSI not still diving
+                    and rsi_result.value < oversold_thr
+                    and z < -2.0):
 
-                # Score: deeper the deviation, higher conviction
-                deviation = abs(z) - 2.0   # excess z beyond 2σ
-                score = round(min(0.60 + deviation * 0.08, 0.95), 4)
+                # Reversal confirmation: hammer, engulfing, div, or RSI turning
+                hammer     = _is_hammer(last_open, last_high, last_low, last_price)
+                bull_eng   = _is_bullish_engulfing(opens, closes)
+                rsi_turn   = (len(rsi_vals) >= 2
+                              and float(rsi_vals.iloc[-1]) >= float(rsi_vals.iloc[-2]) - 1)
+                has_reversal = hammer or bull_eng or divergence == "bullish" or rsi_turn
+                if not has_reversal:
+                    return None
 
-                # Tight stop: 0.5× ATR below current low
-                stop_px = float(lows.iloc[-1]) - atr_result.value * 0.5
+                # Score: z-score depth + divergence bonus
+                deviation  = abs(z) - 2.0
+                base_score = min(0.60 + deviation * 0.08, 0.90)
+                div_bonus  = 0.05 if divergence == "bullish" else 0.0
+                candle_bonus = 0.03 if (hammer or bull_eng) else 0.0
+                score = round(min(base_score + div_bonus + candle_bonus, 0.95), 4)
 
-                # Extended target at extreme deviations
-                if extreme_z:
-                    target_px = bb_result.upper   # full reversion to opposite band
-                    target_label = f"upper BB ({bb_result.upper:.2f})"
+                # Stop: 0.5× ATR below today's low
+                stop_px = last_low - atr_result.value * 0.5
+
+                # Target: opposite BB if extreme OR divergence (extended move)
+                extreme_z = abs(z) > 3.0
+                if extreme_z or divergence == "bullish":
+                    target_px   = bb_result.upper
+                    target_label = f"upper BB ({bb_result.upper:.2f}) — full reversion"
                 else:
-                    target_px = bb_result.middle
+                    target_px   = bb_result.middle
                     target_label = f"mid BB ({bb_result.middle:.2f})"
 
+                signals_hit = []
+                if hammer:      signals_hit.append("hammer")
+                if bull_eng:    signals_hit.append("bull-engulf")
+                if divergence == "bullish": signals_hit.append("RSI-div")
+
                 reasoning = (
-                    f"Mean rev LONG: RSI={rsi_result.value:.1f} (oversold), "
-                    f"z={z:.2f}, below lower BB ({bb_result.lower:.2f}), "
-                    f"vol={vol_r:.1f}x, target {target_label}"
+                    f"MeanRev LONG: RSI={rsi_result.value:.1f}, z={z:.2f}, "
+                    f"BB%b={bb_result.pct_b:.2f}, vol={vol_r:.1f}x"
+                    + (f", signals=[{','.join(signals_hit)}]" if signals_hit else "")
+                    + f", target {target_label}"
                 )
                 return Signal(
                     ticker=ticker, direction="BUY", score=score,
@@ -329,29 +491,45 @@ class MeanReversionStrategy:
                     atr_val=atr_result.value, vol_ratio=vol_r,
                 )
 
-            # ── SHORT: overbought, above upper BB, price turning down ──────────
+            # ── SHORT: overbought + above upper BB + statistically extreme ────
             if (bb_result.above_upper
-                    and deep_overbought
-                    and z > 2.0
-                    and last_price < prev_close  # reversal candle: price retreating
-                    and rsi_result.value <= rsi_prev.value + 2):  # RSI not still rising
+                    and rsi_result.value > overbought_thr
+                    and z > 2.0):
 
-                deviation = abs(z) - 2.0
-                score = round(min(0.60 + deviation * 0.08, 0.95), 4)
+                star    = _is_shooting_star(last_open, last_high, last_low, last_price)
+                bear_eng = _is_bearish_engulfing(opens, closes)
+                rsi_turn = (len(rsi_vals) >= 2
+                            and float(rsi_vals.iloc[-1]) <= float(rsi_vals.iloc[-2]) + 1)
+                has_reversal = star or bear_eng or divergence == "bearish" or rsi_turn
+                if not has_reversal:
+                    return None
 
-                stop_px = float(highs.iloc[-1]) + atr_result.value * 0.5
+                deviation  = abs(z) - 2.0
+                base_score = min(0.60 + deviation * 0.08, 0.90)
+                div_bonus  = 0.05 if divergence == "bearish" else 0.0
+                candle_bonus = 0.03 if (star or bear_eng) else 0.0
+                score = round(min(base_score + div_bonus + candle_bonus, 0.95), 4)
 
-                if extreme_z:
-                    target_px = bb_result.lower
-                    target_label = f"lower BB ({bb_result.lower:.2f})"
+                stop_px = last_high + atr_result.value * 0.5
+
+                extreme_z = abs(z) > 3.0
+                if extreme_z or divergence == "bearish":
+                    target_px   = bb_result.lower
+                    target_label = f"lower BB ({bb_result.lower:.2f}) — full reversion"
                 else:
-                    target_px = bb_result.middle
+                    target_px   = bb_result.middle
                     target_label = f"mid BB ({bb_result.middle:.2f})"
 
+                signals_hit = []
+                if star:     signals_hit.append("shooting-star")
+                if bear_eng: signals_hit.append("bear-engulf")
+                if divergence == "bearish": signals_hit.append("RSI-div")
+
                 reasoning = (
-                    f"Mean rev SHORT: RSI={rsi_result.value:.1f} (overbought), "
-                    f"z={z:.2f}, above upper BB ({bb_result.upper:.2f}), "
-                    f"vol={vol_r:.1f}x, target {target_label}"
+                    f"MeanRev SHORT: RSI={rsi_result.value:.1f}, z={z:.2f}, "
+                    f"BB%b={bb_result.pct_b:.2f}, vol={vol_r:.1f}x"
+                    + (f", signals=[{','.join(signals_hit)}]" if signals_hit else "")
+                    + f", target {target_label}"
                 )
                 return Signal(
                     ticker=ticker, direction="SELL", score=score,
@@ -370,41 +548,52 @@ class MeanReversionStrategy:
 
 
 class ORBStrategy:
-    """Opening Range Breakout — trade confirmed breaks of the prior day's range.
+    """Proper Opening Range Breakout — Toby Crabel methodology on daily bars.
 
-    On daily bars the 'opening range' is yesterday's high/low. This is the
-    standard institutional proxy used when intraday data is unavailable.
-    For live trading the engine should feed 30-minute bars so the range is
-    the first candle of the session.
+    True ORB uses the first N minutes of the trading session (5/15/30/60 min)
+    as the "opening range" and trades confirmed breaks of that range.
+    On daily OHLCV data we simulate this using a three-layer approach:
 
-    Entry rules
-    ───────────
-    LONG  (upside breakout):
-      • today's close > yesterday's high + ATR buffer (confirmed, not a wick)
-      • volume ≥ 1.5× 20d average (institutional participation)
-      • price above 20 SMA (trend alignment — trade with the bigger move)
-      • range is well-formed: 0.3% ≤ range_width/price ≤ 4% (avoid erratic days)
-      • no gap: open ≤ yesterday's high + 0.5% (don't chase huge gaps)
+    Layer 1 — NR7 Trigger (Toby Crabel, "Day Trading With Short-Term Price
+    Patterns and Opening Range Breakout", 1990):
+      Yesterday must be the Narrow Range 7 bar — the narrowest daily range
+      of the last 7 sessions. NR7 signals volatility compression: the market
+      is "coiling" before an expansion move. Crabel found that NR7 days are
+      followed by significantly larger moves the next session.
 
-    SHORT (downside breakdown):
-      • today's close < yesterday's low - ATR buffer
-      • volume ≥ 1.5× 20d average
-      • price below 20 SMA
-      • same range and gap filters as above
+    Layer 2 — ADR Compression Confirm:
+      Yesterday's range must be ≤ 65% of the 14-day Average Daily Range.
+      This double-confirms the compression (NR7 alone can appear in low-vol
+      markets where all ranges are small).
+
+    Layer 3 — Breakout Confirmation:
+      Today's close breaks yesterday's high (long) or low (short) with:
+      • RVOL ≥ 1.5× 20d average (institutional participation on the break)
+      • ATR-based confirmation buffer (10% of ATR, avoids marginal breaks)
+      • Trend alignment: above 20-SMA for longs, below for shorts
+      • Gap filter: if today's open gapped > 1% past the range boundary,
+        skip — the move is already priced in (gap-and-go, not ORB)
+
+    On live intraday feeds: replace yesterday's H/L with the actual first
+    30-minute candle's H/L for a real intraday ORB. All other filters apply.
 
     Exits
     ─────
-    Stop loss : opposite boundary of the opening range
-                (long stop = yesterday's low; short stop = yesterday's high)
-    Target    : 1.5× range_width projected from the breakout level
-    Score     : 0.65 base + volume bonus + trend bonus, capped at 0.92
+    Stop    : opposite side of the opening range (full range invalidation)
+    Target 1: 1.0× range_width above/below breakout (conservative)
+    Target 2: 2.0× range_width (extension target — used as signal target)
+    Score   : 0.65 base + NR7-depth bonus + volume bonus, capped at 0.93
     """
     name = "orb"
-    _ORB_BUFFER_ATR_FRAC = 0.10   # 10% of ATR as confirmation buffer
-    _VOL_THRESHOLD = 1.5          # minimum vol ratio for breakout entry
-    _RANGE_MIN_PCT = 0.003        # 0.3% minimum range relative to price
-    _RANGE_MAX_PCT = 0.04         # 4% maximum (avoid wide/erratic ranges)
-    _GAP_MAX_PCT   = 0.005        # 0.5% max gap above/below range before entry
+
+    # Class-level constants (easy to tune without touching logic)
+    _VOL_THRESHOLD      = 1.5    # minimum RVOL on breakout bar
+    _ATR_BUFFER_FRAC    = 0.10   # confirmation buffer = 10% of ATR
+    _ADR_COMPRESS_FRAC  = 0.65   # yesterday range ≤ 65% of 14-day ADR
+    _GAP_MAX_FRAC       = 0.010  # skip if open already 1% past range (gap-and-go)
+    _RANGE_MIN_FRAC     = 0.002  # 0.2% min range (avoid flat/halted stocks)
+    _RANGE_MAX_FRAC     = 0.050  # 5.0% max range (avoid erratic/news days)
+    _TARGET_MULT        = 2.0    # signal target = 2× range width
 
     def __init__(self) -> None:
         cfg = get_config()
@@ -416,64 +605,72 @@ class ORBStrategy:
             if df is None or len(df) < 30:
                 return None
 
-            closes = df["close"]
-            highs  = df["high"]
-            lows   = df["low"]
-            opens  = df["open"] if "open" in df.columns else closes
+            closes  = df["close"]
+            highs   = df["high"]
+            lows    = df["low"]
+            opens   = df["open"] if "open" in df.columns else closes
             volumes = df["volume"]
 
             last_close = float(closes.iloc[-1])
             last_open  = float(opens.iloc[-1])
-            today_high = float(highs.iloc[-1])
-            today_low  = float(lows.iloc[-1])
 
-            # Yesterday's range = the "opening range" on daily bars
-            orh = float(highs.iloc[-2])   # opening range high
-            orl = float(lows.iloc[-2])    # opening range low
+            # Opening range = yesterday's session high/low (daily proxy)
+            orh = float(highs.iloc[-2])    # opening range high
+            orl = float(lows.iloc[-2])     # opening range low
             range_width = orh - orl
             if range_width <= 0:
                 return None
 
-            # ── Gate 1: Well-formed range (not too wide/narrow) ───────────────
-            range_pct = range_width / last_close
-            if not (self._RANGE_MIN_PCT <= range_pct <= self._RANGE_MAX_PCT):
+            # ── Layer 1: NR7 — yesterday must be narrowest of last 7 bars ────
+            if not _is_nr7(highs, lows):
                 return None
 
-            # ── Gate 2: Volume confirmation ────────────────────────────────────
+            # ── Layer 2: ADR compression — confirm the coiling ────────────────
+            adr_val = adr(highs, lows, period=14)
+            if not _adr_compression(highs, lows, adr_val, self._ADR_COMPRESS_FRAC):
+                return None
+
+            # ── Sanity: range must be well-formed (not micro or news-day wide) ─
+            range_pct = range_width / max(last_close, 0.01)
+            if not (self._RANGE_MIN_FRAC <= range_pct <= self._RANGE_MAX_FRAC):
+                return None
+
+            # ── Volume: institutional participation on the breakout ────────────
             vol_r = volume_ratio(volumes, period=20)
             if vol_r < self._VOL_THRESHOLD:
                 return None
 
-            # ── Compute supporting indicators ──────────────────────────────────
+            # ── Supporting indicators ─────────────────────────────────────────
             atr_result = atr(highs, lows, closes, period=self._s.atr_period,
                              entry_price=last_close,
                              multiplier=self._r.atr_stop_multiplier)
-            buffer = atr_result.value * self._ORB_BUFFER_ATR_FRAC
-            sma20_val = sma(closes, period=20)
-            above_sma = sma20_val is not None and last_close > sma20_val
-            below_sma = sma20_val is not None and last_close < sma20_val
+            buffer     = atr_result.value * self._ATR_BUFFER_FRAC
+            sma20_val  = sma(closes, period=20)
+            above_sma  = sma20_val is not None and last_close > sma20_val
+            below_sma  = sma20_val is not None and last_close < sma20_val
 
-            # ── Gate 3: No runaway gap (price shouldn't already be far past range)
-            gap_above = last_open - orh   # positive = gapped above range at open
-            gap_below = orl - last_open   # positive = gapped below range at open
+            # NR7 depth ratio: how compressed vs ADR (closer to 0 = more coiled)
+            nr7_depth = range_width / max(adr_val, 0.001)   # 0–1, lower is better
+            nr7_bonus = round(max(0.0, (self._ADR_COMPRESS_FRAC - nr7_depth) * 0.20), 3)
 
-            # ── LONG: close above ORH + buffer ────────────────────────────────
+            # ── LONG: close above ORH + ATR buffer, trend aligned ─────────────
+            gap_above = last_open - orh    # positive = gapped above range on open
             if (last_close > orh + buffer
-                    and gap_above <= orh * self._GAP_MAX_PCT
+                    and gap_above <= orh * self._GAP_MAX_FRAC
                     and above_sma):
 
-                stop_px   = orl   # full range stop at opposite boundary
-                target_px = last_close + 1.5 * range_width
+                stop_px   = orl                                   # opposite range boundary
+                risk      = last_close - stop_px
+                target_px = last_close + self._TARGET_MULT * range_width
 
-                # Bonus scoring
-                vol_bonus   = min((vol_r - self._VOL_THRESHOLD) * 0.05, 0.10)
-                trend_bonus = 0.05 if above_sma else 0.0
-                score = round(min(0.65 + vol_bonus + trend_bonus, 0.92), 4)
+                vol_bonus = min((vol_r - self._VOL_THRESHOLD) * 0.04, 0.08)
+                score = round(min(0.65 + nr7_bonus + vol_bonus, 0.93), 4)
 
                 reasoning = (
-                    f"ORB breakout LONG: close {last_close:.2f} > ORH {orh:.2f} "
-                    f"(range {range_pct:.1%}), vol={vol_r:.1f}x, "
-                    f"stop=ORL {stop_px:.2f}, target={target_px:.2f}"
+                    f"ORB LONG (NR7+ADR): close {last_close:.2f} > ORH {orh:.2f}, "
+                    f"range={range_pct:.1%} ({nr7_depth:.1%} of ADR), "
+                    f"vol={vol_r:.1f}x, stop={stop_px:.2f}, "
+                    f"target={target_px:.2f} ({self._TARGET_MULT}× range)"
                 )
                 return Signal(
                     ticker=ticker, direction="BUY", score=score,
@@ -485,22 +682,24 @@ class ORBStrategy:
                     atr_val=atr_result.value, vol_ratio=vol_r,
                 )
 
-            # ── SHORT: close below ORL - buffer ───────────────────────────────
+            # ── SHORT: close below ORL - ATR buffer, trend aligned ────────────
+            gap_below = orl - last_open    # positive = gapped below range on open
             if (last_close < orl - buffer
-                    and gap_below <= orl * self._GAP_MAX_PCT
+                    and gap_below <= orl * self._GAP_MAX_FRAC
                     and below_sma):
 
-                stop_px   = orh   # full range stop at opposite boundary
-                target_px = last_close - 1.5 * range_width
+                stop_px   = orh
+                risk      = stop_px - last_close
+                target_px = last_close - self._TARGET_MULT * range_width
 
-                vol_bonus   = min((vol_r - self._VOL_THRESHOLD) * 0.05, 0.10)
-                trend_bonus = 0.05 if below_sma else 0.0
-                score = round(min(0.65 + vol_bonus + trend_bonus, 0.92), 4)
+                vol_bonus = min((vol_r - self._VOL_THRESHOLD) * 0.04, 0.08)
+                score = round(min(0.65 + nr7_bonus + vol_bonus, 0.93), 4)
 
                 reasoning = (
-                    f"ORB breakdown SHORT: close {last_close:.2f} < ORL {orl:.2f} "
-                    f"(range {range_pct:.1%}), vol={vol_r:.1f}x, "
-                    f"stop=ORH {stop_px:.2f}, target={target_px:.2f}"
+                    f"ORB SHORT (NR7+ADR): close {last_close:.2f} < ORL {orl:.2f}, "
+                    f"range={range_pct:.1%} ({nr7_depth:.1%} of ADR), "
+                    f"vol={vol_r:.1f}x, stop={stop_px:.2f}, "
+                    f"target={target_px:.2f} ({self._TARGET_MULT}× range)"
                 )
                 return Signal(
                     ticker=ticker, direction="SELL", score=score,

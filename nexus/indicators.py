@@ -1,10 +1,15 @@
-"""Technical indicators — all bugs pre-fixed, volume_ratio added.
+"""Technical indicators — RSI, MACD, Bollinger, ATR, ADR, volume.
 
 Fixed vs original:
 1. RSI: Wilder smoothing via ewm(alpha=1/period, adjust=False) — no off-by-one
+   RSI = 100 when avg_loss == 0 (pure uptrend), not 50
 2. MA crossover: event-based cross detection (prev vs curr bar) — no continuous firing
 3. MACD cross: histogram sign change detection — event, not state
 4. Limit price: dynamic min(0.3%, 0.5×spread) slippage — not flat 0.1%
+
+v3.2 additions:
+5. adr(): Average Daily Range — used by ORB for compression filtering
+6. rsi_series(): Full RSI series — used by mean reversion for divergence detection
 """
 from __future__ import annotations
 
@@ -160,6 +165,40 @@ def volume_ratio(volume: pd.Series, period: int = 20) -> float:
         return 1.0
     avg = float(volume.rolling(period).mean().iloc[-1])
     return float(volume.iloc[-1]) / max(avg, 1)
+
+
+def adr(high: pd.Series, low: pd.Series, period: int = 14) -> float:
+    """Average Daily Range — mean of (high - low) over period bars.
+
+    Used by ORB to identify compressed ranges relative to normal volatility.
+    A range < 50% of ADR signals a 'coiling' day (Toby Crabel NR7 companion).
+    """
+    if len(high) < 2:
+        return 0.0
+    ranges = (high - low).iloc[-period:]
+    return float(ranges.mean())
+
+
+def rsi_series(prices: pd.Series, period: int = 14) -> pd.Series:
+    """Return the full RSI series (not just the last value).
+
+    Used by mean reversion to detect RSI divergence across a lookback window:
+    price makes a new low but RSI makes a higher low → bullish divergence.
+    """
+    if len(prices) < period + 1:
+        return pd.Series([50.0] * len(prices), index=prices.index)
+    delta = prices.diff()
+    gains = delta.clip(lower=0)
+    losses = (-delta).clip(lower=0)
+    avg_gain = gains.ewm(alpha=1 / period, adjust=False).mean()
+    avg_loss = losses.ewm(alpha=1 / period, adjust=False).mean()
+    # Handle avg_loss == 0 correctly (pure uptrend → RSI = 100)
+    last_loss = avg_loss.copy()
+    rs = avg_gain / last_loss.where(last_loss != 0, other=np.nan)
+    result = 100.0 - (100.0 / (1.0 + rs))
+    result = result.where(~np.isnan(result), other=50.0)
+    result = result.where(last_loss != 0, other=100.0)
+    return result
 
 
 def dynamic_limit_price(mid: float, spread: float, side: str) -> float:
