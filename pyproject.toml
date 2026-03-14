@@ -33,6 +33,9 @@ moomoo = [
 webull = [
     "webull>=0.2.0",
 ]
+discord = [
+    "discord.py>=2.3.0",
+]
 all-brokers = [
     "ib_insync>=0.9.86",
     "futu-openapi>=9.0.0",

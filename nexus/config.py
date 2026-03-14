@@ -16,6 +16,17 @@ load_dotenv()
 
 
 @dataclass
+class DiscordConfig:
+    bot_token: str = field(default_factory=lambda: os.getenv("DISCORD_BOT_TOKEN", ""))
+    channel_ids: List[int] = field(default_factory=lambda: [
+        int(x) for x in os.getenv("DISCORD_CHANNEL_IDS", "").split(",") if x.strip().isdigit()
+    ])
+    min_message_score: float = 0.55
+    use_llm_parsing: bool = False
+    history_limit: int = 50
+
+
+@dataclass
 class AlpacaConfig:
     api_key: str = field(default_factory=lambda: os.getenv("ALPACA_API_KEY", ""))
     secret_key: str = field(default_factory=lambda: os.getenv("ALPACA_SECRET_KEY", ""))
@@ -68,6 +79,7 @@ class NEXUSConfig:
     alpaca: AlpacaConfig = field(default_factory=AlpacaConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
+    discord: DiscordConfig = field(default_factory=DiscordConfig)
     db_path: str = "nexus.db"
     log_level: str = "INFO"
 

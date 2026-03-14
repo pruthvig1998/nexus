@@ -80,7 +80,9 @@ def backtest(tickers, years, capital, output, log_level):
 @click.option("--no-dashboard", is_flag=True)
 @click.option("--scan-interval", default=60, show_default=True)
 @click.option("--log-level", default="INFO", show_default=True)
-def run(paper, tickers, no_dashboard, scan_interval, log_level):
+@click.option("--discord", "use_discord", is_flag=True, default=False,
+              help="Enable Discord channel monitoring for signals")
+def run(paper, tickers, no_dashboard, scan_interval, log_level, use_discord):
     """Start the live long/short trading engine with Rich dashboard."""
     from nexus.logger import setup_logging
     setup_logging(log_level)
@@ -107,18 +109,33 @@ def run(paper, tickers, no_dashboard, scan_interval, log_level):
         from nexus.dashboard import NEXUSDashboard
 
         engine = NEXUSEngine(config=cfg)
-        if no_dashboard:
-            await engine.start()
-        else:
+
+        tasks = [engine.start()]
+        if not no_dashboard:
             dash = NEXUSDashboard(engine.tracker, paper=paper,
                                   event_bus=engine.event_bus)
-            try:
-                await asyncio.gather(engine.start(), dash.run())
-            except (KeyboardInterrupt, asyncio.CancelledError):
-                pass
-            finally:
-                await engine.stop()
+            tasks.append(dash.run())
+        else:
+            dash = None
+
+        if use_discord:
+            from nexus.discord_feed import DiscordFeed
+            feed = DiscordFeed(cfg.discord, engine.get_signal_queue())
+            tasks.append(feed.start())
+            click.echo("Discord feed enabled — monitoring configured channels")
+        else:
+            feed = None
+
+        try:
+            await asyncio.gather(*tasks)
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            pass
+        finally:
+            await engine.stop()
+            if dash:
                 await dash.stop()
+            if feed:
+                await feed.stop()
 
     try:
         asyncio.run(_run())

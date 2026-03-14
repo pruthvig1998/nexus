@@ -121,6 +121,9 @@ class NEXUSEngine:
         # Drawdown tracking for position size scaling
         self._peak_equity: float = 0.0
 
+        # External signal queue (e.g. Discord feed)
+        self._signal_queue: asyncio.Queue[Signal] = asyncio.Queue()
+
     # ── Public interface ──────────────────────────────────────────────────────
 
     @property
@@ -161,6 +164,14 @@ class NEXUSEngine:
         self._running = False
         await self._broker.disconnect()
         log.info("NEXUS stopped", scans=self._scan_count)
+
+    def inject_signal(self, signal: Signal) -> None:
+        """Inject an external signal directly into the scan queue."""
+        self._signal_queue.put_nowait(signal)
+
+    def get_signal_queue(self) -> asyncio.Queue:
+        """Return the queue for external signal sources (e.g. DiscordFeed)."""
+        return self._signal_queue
 
     # ── Scan loop ─────────────────────────────────────────────────────────────
 
@@ -215,6 +226,16 @@ class NEXUSEngine:
             if isinstance(sig, Signal) and sig.direction != "HOLD":
                 if sig.ticker not in best or sig.score > best[sig.ticker].score:
                     best[sig.ticker] = sig
+
+        # Drain external signal queue (Discord feed, etc.)
+        while not self._signal_queue.empty():
+            try:
+                ext_sig = self._signal_queue.get_nowait()
+                if ext_sig.score >= self._cfg.strategy.min_signal_score:
+                    if ext_sig.ticker not in best or ext_sig.score > best[ext_sig.ticker].score:
+                        best[ext_sig.ticker] = ext_sig
+            except asyncio.QueueEmpty:
+                break
 
         if self._broker.is_connected and not self._risk.is_halted:
             market_open = await self._broker.is_market_open()
