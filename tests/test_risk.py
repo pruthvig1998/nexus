@@ -124,10 +124,12 @@ class TestRiskLimits:
         """BUY signals blocked when long book exceeds 90%."""
         cfg = RiskConfig(max_portfolio_exposure=0.90)
         rl = RiskLimits(cfg)
+        # 10 positions × 100 shares × $100 = $100k long exposure on $100k portfolio = 100%
         positions = self._make_positions(n_long=10, shares=100.0, price=100.0)
+        # Use 30 shares (3% of portfolio) so per-position cap (5%) doesn't fire first
         result = rl.check(
             signal_score=0.8, portfolio_value=100_000, cash=50_000,
-            open_positions=positions, proposed_shares=100, entry_price=100.0,
+            open_positions=positions, proposed_shares=30, entry_price=100.0,
             signal_direction="BUY",
         )
         assert not result.approved

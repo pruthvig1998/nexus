@@ -70,9 +70,13 @@ class TestComputeSignal:
 
     def test_low_volume_filtered(self):
         """Signals on extremely low volume should be rejected."""
-        df = _make_df(n=120, vol_multiplier=0.1)  # 10% of normal volume
+        # Build df where most bars have high volume, but the last bar has
+        # 10% of the 20-day average — vol_ratio < 0.5 → signal filtered
+        df = _make_df(n=120, vol_multiplier=1.5)  # normal history
+        # Override last bar with very low volume to trip the vol_ratio filter
+        df.loc[df.index[-1], "volume"] = df["volume"].mean() * 0.05
         sig = compute_signal("AAPL", df, self.strategy_cfg, self.risk_cfg)
-        assert sig is None  # below 0.5× threshold
+        assert sig is None  # below 0.5× volume threshold
 
     def test_ticker_propagated(self):
         df = _make_df(n=120)

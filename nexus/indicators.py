@@ -57,11 +57,14 @@ def rsi(prices: pd.Series, period: int = 14) -> RSIResult:
     losses = (-delta).clip(lower=0)
     avg_gain = gains.ewm(alpha=1 / period, adjust=False).mean()
     avg_loss = losses.ewm(alpha=1 / period, adjust=False).mean()
-    rs = avg_gain / avg_loss.replace(0, np.nan)
-    rsi_series = 100 - (100 / (1 + rs))
-    value = float(rsi_series.iloc[-1])
-    if np.isnan(value):
+    last_gain = float(avg_gain.iloc[-1])
+    last_loss = float(avg_loss.iloc[-1])
+    if np.isnan(last_gain) or np.isnan(last_loss):
         value = 50.0
+    elif last_loss == 0:
+        value = 100.0 if last_gain > 0 else 50.0  # pure uptrend → fully overbought
+    else:
+        value = 100.0 - (100.0 / (1.0 + last_gain / last_loss))
     return RSIResult(value=value, oversold=value < 30, overbought=value > 70)
 
 

@@ -34,8 +34,13 @@ class TestRSI:
         assert 0 <= result.value <= 100
 
     def test_rsi_overbought(self):
-        # Strongly uptrending series should produce high RSI
-        closes = _closes([100 + i * 2 for i in range(50)])
+        # Strongly uptrending series with noise should produce high RSI
+        # Use large random-walk gains to ensure avg_gain >> avg_loss
+        np.random.seed(42)
+        prices = [100.0]
+        for _ in range(60):
+            prices.append(prices[-1] + abs(np.random.normal(2.0, 0.3)))  # all gains
+        closes = _closes(prices)
         result = rsi(closes, period=14)
         assert result.overbought or result.value > 60
 
