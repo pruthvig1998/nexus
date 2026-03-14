@@ -1,0 +1,49 @@
+[project]
+name = "nexus-trader"
+version = "3.0.0"
+description = "Production-grade long/short algorithmic trading system"
+authors = [{name = "Pruthvi Garlapati", email = "pruthvig1998@gmail.com"}]
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+dependencies = [
+    "alpaca-py>=0.13.0",
+    "anthropic>=0.34.0",
+    "click>=8.1.7",
+    "numpy>=1.26.0",
+    "pandas>=2.1.0",
+    "python-dotenv>=1.0.0",
+    "rich>=13.7.0",
+    "structlog>=24.1.0",
+    "yfinance>=0.2.36",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.3.0",
+]
+
+[project.scripts]
+nexus = "nexus.main:cli"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends.legacy:build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["nexus*"]
