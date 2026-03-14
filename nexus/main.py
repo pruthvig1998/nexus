@@ -120,7 +120,8 @@ def run(paper, tickers, no_dashboard, scan_interval, log_level, use_discord):
 
         if use_discord:
             from nexus.discord_feed import DiscordFeed
-            feed = DiscordFeed(cfg.discord, engine.get_signal_queue())
+            feed = DiscordFeed(cfg.discord, engine.get_signal_queue(),
+                               news_strategy=engine.news_strategy)
             tasks.append(feed.start())
             click.echo("Discord feed enabled — monitoring configured channels")
         else:

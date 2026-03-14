@@ -64,6 +64,17 @@ class StrategyConfig:
     trend_sma_period: int = 50
     rr_ratio: float = 3.0
 
+    # IronGrid rules
+    vix_max_entry: float = 24.5          # don't buy options when VIX above this
+    first_30min_wait: bool = True        # wait 30 min after market open
+    profit_trim_25: float = 0.25         # trim 25% at +25%
+    profit_trim_50: float = 0.50         # trim 50% at +50%
+    profit_recover_100: float = 1.00     # recover capital at +100%
+    max_swing_positions: int = 3
+    max_leap_positions: int = 5
+    stop_loss_pct: float = 0.25          # 25% stop loss on options
+    trailing_stop_pct: float = 0.12      # 12% trail once up 20%+
+
 
 @dataclass
 class NEXUSConfig:

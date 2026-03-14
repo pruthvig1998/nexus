@@ -27,6 +27,8 @@ from nexus.strategy import (
     AIFundamentalStrategy, MeanReversionStrategy, MomentumStrategy,
     ORBStrategy, Signal,
 )
+from nexus.strategy_irongrid import IronGridStrategy
+from nexus.strategy_news import NewsSentimentStrategy
 from nexus.tracker import PortfolioTracker
 
 log = get_logger("engine")
@@ -104,7 +106,13 @@ class NEXUSEngine:
         self._running = False
         self._scan_count = 0
 
-        self._strategies = [MomentumStrategy(), MeanReversionStrategy(), ORBStrategy()]
+        self._strategies = [
+            MomentumStrategy(),
+            MeanReversionStrategy(),
+            ORBStrategy(),
+            IronGridStrategy(),
+            NewsSentimentStrategy(),
+        ]
         if self._cfg.anthropic_api_key:
             self._strategies.append(AIFundamentalStrategy())
 
@@ -172,6 +180,14 @@ class NEXUSEngine:
     def get_signal_queue(self) -> asyncio.Queue:
         """Return the queue for external signal sources (e.g. DiscordFeed)."""
         return self._signal_queue
+
+    @property
+    def news_strategy(self) -> Optional[object]:
+        """Return the NewsSentimentStrategy instance for headline injection."""
+        for s in self._strategies:
+            if hasattr(s, 'name') and s.name == "news_sentiment":
+                return s
+        return None
 
     # ── Scan loop ─────────────────────────────────────────────────────────────
 

@@ -328,7 +328,8 @@ class DiscordFeed:
         stats: Read-only dict of operational counters.
     """
 
-    def __init__(self, config: DiscordConfig, signal_queue: asyncio.Queue) -> None:  # type: ignore[type-arg]
+    def __init__(self, config: DiscordConfig, signal_queue: asyncio.Queue,  # type: ignore[type-arg]
+                 news_strategy=None) -> None:
         try:
             import discord  # type: ignore[import]
         except ImportError as exc:
@@ -344,6 +345,7 @@ class DiscordFeed:
         self._queue: asyncio.Queue = signal_queue  # type: ignore[type-arg]
         self._seen_ids: set[int] = set()
         self._discord = discord
+        self._news_strategy = news_strategy
 
         # Operational counters
         self._messages_processed: int = 0
@@ -450,6 +452,18 @@ class DiscordFeed:
         # Optional LLM confirmation
         if self._cfg.use_llm_parsing and signals:
             signals = await self._llm_confirm(content, signals)
+
+        # Extract headlines from embeds (TweetShift bot feeds)
+        embeds = getattr(message, 'embeds', []) or []
+        for embed in embeds:
+            headline = getattr(embed, 'description', '') or getattr(embed, 'title', '') or ''
+            if headline and self._news_strategy and hasattr(self._news_strategy, 'add_headline'):
+                source = getattr(getattr(embed, 'author', None), 'name', '') or ''
+                self._news_strategy.add_headline(
+                    text=headline,
+                    source=source,
+                    timestamp=str(message.created_at) if hasattr(message, 'created_at') else '',
+                )
 
         for sig in signals:
             if sig.score >= self._cfg.min_message_score:

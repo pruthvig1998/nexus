@@ -184,3 +184,31 @@ class RiskLimits:
                                    adjusted_shares=max_affordable)
 
         return RiskCheckResult(True, "Approved", adjusted_shares=proposed_shares)
+
+    def check_profit_ladder(
+        self,
+        entry_price: float,
+        current_price: float,
+        side: str,
+    ) -> Optional[str]:
+        """Check if a position has hit IronGrid profit ladder levels.
+
+        Returns action string or None:
+          'trim_25' — trim 20-30% at +25%
+          'trim_50' — trim another 20-30% at +50%
+          'recover_capital' — take back initial capital at +100%
+        """
+        if entry_price <= 0:
+            return None
+        if side == "LONG":
+            pct_gain = (current_price - entry_price) / entry_price
+        else:
+            pct_gain = (entry_price - current_price) / entry_price
+
+        if pct_gain >= 1.00:
+            return "recover_capital"
+        elif pct_gain >= 0.50:
+            return "trim_50"
+        elif pct_gain >= 0.25:
+            return "trim_25"
+        return None
