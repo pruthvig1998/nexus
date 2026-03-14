@@ -201,5 +201,56 @@ def signals(db, limit):
                    f"{(s.get('reasoning') or '')[:40]}")
 
 
+# ── load-discord ───────────────────────────────────────────────────────────────
+
+@cli.command("load-discord")
+@click.argument("path", default="~/Desktop/discord-exports/")
+@click.option("--min-score", default=0.55, show_default=True,
+              help="Minimum signal score to include (0.0–1.0)")
+@click.option("--db", default="nexus.db", show_default=True,
+              help="SQLite database to log signals into")
+@click.option("--no-db", is_flag=True, default=False,
+              help="Parse and display signals without writing to DB")
+@click.option("--show-signals", is_flag=True, default=False,
+              help="Print individual signal details after summary")
+@click.option("--limit", default=50, show_default=True,
+              help="Max signals to show with --show-signals")
+@click.option("--log-level", default="WARNING", show_default=True)
+def load_discord(path, min_score, db, no_db, show_signals, limit, log_level):
+    """Load DiscordChatExporter JSON exports and extract trading signals.
+
+    PATH can be a single .json file or a directory of exported files.
+
+    \b
+    Examples:
+      nexus load-discord ~/Desktop/discord-exports/
+      nexus load-discord ~/Desktop/exports/server.json --show-signals
+      nexus load-discord ~/Desktop/discord-exports/ --min-score 0.60 --no-db
+    """
+    from nexus.logger import setup_logging
+    setup_logging(log_level)
+    from nexus.discord_loader import DiscordLoader
+
+    loader = DiscordLoader(min_score=min_score)
+
+    try:
+        summary = loader.load(path)
+    except FileNotFoundError as e:
+        click.echo(f"\n  Error: {e}", err=True)
+        raise SystemExit(1)
+
+    if not no_db and summary.signals_found > 0:
+        loader.log_to_db(summary, db_path=db)
+
+    loader.print_summary(summary)
+
+    if show_signals:
+        loader.print_signals(summary, limit=limit)
+
+    if summary.signals_found == 0:
+        click.echo("  No trading signals found. Try lowering --min-score or check "
+                   "that the export contains trading-related messages.\n")
+
+
 if __name__ == "__main__":
     cli()
