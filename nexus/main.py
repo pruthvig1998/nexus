@@ -76,13 +76,16 @@ def backtest(tickers, years, capital, output, log_level):
 
 @cli.command()
 @click.option("--paper/--live", default=True, show_default=True)
+@click.option("-b", "--broker", "broker_name", default="alpaca",
+              type=click.Choice(["alpaca", "moomoo", "ibkr", "webull"], case_sensitive=False),
+              show_default=True, help="Broker to trade with")
 @click.option("-t", "--ticker", "tickers", multiple=True)
 @click.option("--no-dashboard", is_flag=True)
 @click.option("--scan-interval", default=60, show_default=True)
 @click.option("--log-level", default="INFO", show_default=True)
 @click.option("--discord", "use_discord", is_flag=True, default=False,
               help="Enable Discord channel monitoring for signals")
-def run(paper, tickers, no_dashboard, scan_interval, log_level, use_discord):
+def run(paper, broker_name, tickers, no_dashboard, scan_interval, log_level, use_discord):
     """Start the live long/short trading engine with Rich dashboard."""
     from nexus.logger import setup_logging
     setup_logging(log_level)
@@ -94,13 +97,35 @@ def run(paper, tickers, no_dashboard, scan_interval, log_level, use_discord):
             abort=True,
         )
 
-    cfg = NEXUSConfig(paper=paper, scan_interval=scan_interval, log_level=log_level)
+    cfg = NEXUSConfig(paper=paper, active_broker=broker_name,
+                      scan_interval=scan_interval, log_level=log_level)
     if tickers:
         cfg.watchlist = list(tickers)
     set_config(cfg)
 
+    # Instantiate the selected broker
+    def _make_broker():
+        if broker_name == "moomoo":
+            from nexus.broker_moomoo import MoomooBroker, MoomooTrdEnv
+            trade_env = MoomooTrdEnv.SIMULATE if paper else MoomooTrdEnv.REAL
+            return MoomooBroker(
+                host=cfg.moomoo.host,
+                port=cfg.moomoo.port,
+                trade_env=trade_env,
+            )
+        elif broker_name == "ibkr":
+            from nexus.broker_ibkr import IBKRBroker
+            return IBKRBroker()
+        elif broker_name == "webull":
+            from nexus.broker_webull import WebullBroker
+            return WebullBroker()
+        else:
+            from nexus.broker import AlpacaBroker
+            return AlpacaBroker(cfg.alpaca)
+
+    broker = _make_broker()
     mode = "PAPER" if paper else "LIVE"
-    click.echo(f"Starting NEXUS v3 [{mode}] — broker: Alpaca — Long/Short")
+    click.echo(f"Starting NEXUS v3 [{mode}] — broker: {broker_name.upper()} — Long/Short")
     click.echo(f"Watchlist: {', '.join(cfg.watchlist)}")
     click.echo(f"Scan interval: {scan_interval}s  |  Press Ctrl+C to stop\n")
 
@@ -108,7 +133,7 @@ def run(paper, tickers, no_dashboard, scan_interval, log_level, use_discord):
         from nexus.engine import NEXUSEngine
         from nexus.dashboard import NEXUSDashboard
 
-        engine = NEXUSEngine(config=cfg)
+        engine = NEXUSEngine(config=cfg, broker=broker)
 
         tasks = [engine.start()]
         if not no_dashboard:

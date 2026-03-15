@@ -34,6 +34,13 @@ class AlpacaConfig:
 
 
 @dataclass
+class MoomooConfig:
+    host: str = field(default_factory=lambda: os.getenv("MOOMOO_HOST", "127.0.0.1"))
+    port: int = field(default_factory=lambda: int(os.getenv("MOOMOO_PORT", "11111")))
+    trade_env: str = field(default_factory=lambda: os.getenv("MOOMOO_TRADE_ENV", "SIMULATE"))
+
+
+@dataclass
 class RiskConfig:
     max_position_pct: float = 0.05
     max_portfolio_exposure: float = 0.90
@@ -88,6 +95,7 @@ class NEXUSConfig:
     anthropic_api_key: str = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY", ""))
     ai_model: str = "claude-opus-4-6"
     alpaca: AlpacaConfig = field(default_factory=AlpacaConfig)
+    moomoo: MoomooConfig = field(default_factory=MoomooConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
     discord: DiscordConfig = field(default_factory=DiscordConfig)

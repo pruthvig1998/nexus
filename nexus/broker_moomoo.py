@@ -1,11 +1,11 @@
-"""Moomoo / Futu broker adapter — via futu-openapi.
+"""Moomoo / Futu broker adapter — via moomoo-api.
 
 Setup (one-time)
 ────────────────
-1. pip install futu-openapi
-2. Download OpenD gateway from: https://www.futunn.com/download/OpenAPI
+1. pip install moomoo-api
+2. Download OpenD gateway from: https://www.moomoo.com/download/OpenAPI
 3. Launch OpenD — it must be running before connecting
-4. Log in to OpenD with your Moomoo/Futu account
+4. Log in to OpenD with your Moomoo account
 5. Add to .env:
    MOOMOO_HOST=127.0.0.1
    MOOMOO_PORT=11111       # OpenD default
@@ -91,7 +91,7 @@ class MoomooBroker(BaseBroker):
 
     async def connect(self) -> bool:
         try:
-            import futu as ft
+            import moomoo as ft
             env = ft.TrdEnv.SIMULATE if self.trade_env == MoomooTrdEnv.SIMULATE else ft.TrdEnv.REAL
 
             self._quote_ctx = ft.OpenQuoteContext(host=self.host, port=self.port)
@@ -112,8 +112,8 @@ class MoomooBroker(BaseBroker):
                      env=self.trade_env)
             return True
         except ImportError:
-            log.warning("futu-openapi not installed",
-                        hint="pip install futu-openapi")
+            log.warning("moomoo-api not installed",
+                        hint="pip install moomoo-api")
             return False
         except Exception as e:
             log.error("Moomoo connect failed", error=str(e),
@@ -132,7 +132,7 @@ class MoomooBroker(BaseBroker):
 
     async def is_market_open(self) -> bool:
         try:
-            import futu as ft
+            import moomoo as ft
             ret, data = self._quote_ctx.get_market_state(["US.AAPL"])
             if ret != ft.RET_OK or data.empty:
                 return True   # fallback: assume open
@@ -148,7 +148,7 @@ class MoomooBroker(BaseBroker):
         if not self.is_connected:
             return None
         try:
-            import futu as ft
+            import moomoo as ft
             code = _us(ticker)
             ret, data = self._quote_ctx.get_stock_quote([code])
             if ret != ft.RET_OK or data.empty:
@@ -178,7 +178,7 @@ class MoomooBroker(BaseBroker):
         if not self.is_connected:
             return {}
         try:
-            import futu as ft
+            import moomoo as ft
             codes = [_us(t) for t in tickers]
             ret, data = self._quote_ctx.get_stock_quote(codes)
             if ret != ft.RET_OK or data.empty:
@@ -210,7 +210,7 @@ class MoomooBroker(BaseBroker):
         if not self.is_connected:
             return []
         try:
-            import futu as ft
+            import moomoo as ft
             env = ft.TrdEnv.SIMULATE if self.trade_env == MoomooTrdEnv.SIMULATE else ft.TrdEnv.REAL
             ret, data = self._trade_ctx.position_list_query(trd_env=env)
             if ret != ft.RET_OK or data.empty:
@@ -235,18 +235,28 @@ class MoomooBroker(BaseBroker):
             log.error("Moomoo get_positions failed", error=str(e))
             return []
 
+    @staticmethod
+    def _safe_float(val, default: float = 0.0) -> float:
+        """Convert a value to float, returning default for N/A or None."""
+        if val is None or val == "N/A" or val == "":
+            return default
+        try:
+            return float(val)
+        except (ValueError, TypeError):
+            return default
+
     async def get_account_info(self) -> AccountInfo:
         try:
-            import futu as ft
+            import moomoo as ft
             env = ft.TrdEnv.SIMULATE if self.trade_env == MoomooTrdEnv.SIMULATE else ft.TrdEnv.REAL
             ret, data = self._trade_ctx.accinfo_query(trd_env=env)
             if ret != ft.RET_OK or data.empty:
                 raise ValueError(f"accinfo_query failed: {data}")
             row = data.iloc[0]
-            cash      = float(row.get("cash", 0) or 0)
-            net_liq   = float(row.get("total_assets", 0) or 0)
-            buy_pwr   = float(row.get("max_power_short", 0) or 0)
-            total_pnl = float(row.get("total_profit_val", 0) or 0)
+            cash      = self._safe_float(row.get("cash", 0))
+            net_liq   = self._safe_float(row.get("total_assets", 0))
+            buy_pwr   = self._safe_float(row.get("max_power_short", 0))
+            total_pnl = self._safe_float(row.get("total_profit_val", 0))
             return AccountInfo(
                 broker=self.name,
                 cash=cash,
@@ -272,7 +282,7 @@ class MoomooBroker(BaseBroker):
             return OrderResult("", ticker, side, qty, 0, 0,
                                OrderStatus.REJECTED, self.name, "Not connected")
         try:
-            import futu as ft
+            import moomoo as ft
             env  = ft.TrdEnv.SIMULATE if self.trade_env == MoomooTrdEnv.SIMULATE else ft.TrdEnv.REAL
             code = _us(ticker)
             trd_side = ft.TrdSide.BUY if side == OrderSide.BUY else ft.TrdSide.SELL
@@ -313,7 +323,7 @@ class MoomooBroker(BaseBroker):
 
     async def cancel_order(self, order_id: str) -> bool:
         try:
-            import futu as ft
+            import moomoo as ft
             env = ft.TrdEnv.SIMULATE if self.trade_env == MoomooTrdEnv.SIMULATE else ft.TrdEnv.REAL
             ret, data = self._trade_ctx.modify_order(
                 modify_order_op=ft.ModifyOrderOp.CANCEL,
@@ -329,7 +339,7 @@ class MoomooBroker(BaseBroker):
 
     async def get_order_status(self, order_id: str) -> OrderResult:
         try:
-            import futu as ft
+            import moomoo as ft
             env = ft.TrdEnv.SIMULATE if self.trade_env == MoomooTrdEnv.SIMULATE else ft.TrdEnv.REAL
             ret, data = self._trade_ctx.order_list_query(
                 order_id=order_id, trd_env=env

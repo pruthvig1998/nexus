@@ -28,7 +28,7 @@ ibkr = [
     "ib_insync>=0.9.86",
 ]
 moomoo = [
-    "futu-openapi>=9.0.0",
+    "moomoo-api>=10.0.0",
 ]
 webull = [
     "webull>=0.2.0",
@@ -38,7 +38,7 @@ discord = [
 ]
 all-brokers = [
     "ib_insync>=0.9.86",
-    "futu-openapi>=9.0.0",
+    "moomoo-api>=10.0.0",
     "webull>=0.2.0",
 ]
 
