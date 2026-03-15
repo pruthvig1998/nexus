@@ -1,41 +1,41 @@
 name: Weekly Backtest
 
-  on:
-    schedule:
-      - cron: "0 6 * * 1"
-    workflow_dispatch:
-      inputs:
-        years:
-          description: "Backtest years"
-          default: "2"
-          required: false
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      years:
+        description: "Backtest years"
+        default: "2"
+        required: false
 
-  jobs:
-    backtest:
-      runs-on: ubuntu-latest
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
 
-      steps:
-        - uses: actions/checkout@v4
+    steps:
+      - uses: actions/checkout@v4
 
-        - uses: actions/setup-python@v5
-          with:
-            python-version: "3.11"
-            cache: pip
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
 
-        - name: Install dependencies
-          run: pip install -e .
+      - name: Install dependencies
+        run: pip install -e .
 
-        - name: Run long/short backtest
-          run: |
-            mkdir -p reports
-            python -m nexus backtest \
-              -t AAPL -t MSFT -t NVDA -t GOOGL -t JPM -t AMD \
-              --years ${{ github.event.inputs.years || '2' }} \
-              -o reports/weekly_backtest.html
+      - name: Run long/short backtest
+        run: |
+          mkdir -p reports
+          python -m nexus backtest \
+            -t AAPL -t MSFT -t NVDA -t GOOGL -t JPM -t AMD \
+            --years ${{ github.event.inputs.years || '2' }} \
+            -o reports/weekly_backtest.html
 
-        - name: Upload backtest report
-          uses: actions/upload-artifact@v4
-          with:
-            name: backtest-report-${{ github.run_number }}
-            path: reports/weekly_backtest.html
-            retention-days: 90
+      - name: Upload backtest report
+        uses: actions/upload-artifact@v4
+        with:
+          name: backtest-report-${{ github.run_number }}
+          path: reports/weekly_backtest.html
+          retention-days: 90
