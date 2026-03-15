@@ -1,0 +1,139 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#020617"/>
+      <stop offset="100%" style="stop-color:#0F172A"/>
+    </linearGradient>
+    <linearGradient id="gridFade" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#1E293B;stop-opacity:0.6"/>
+      <stop offset="100%" style="stop-color:#1E293B;stop-opacity:0"/>
+    </linearGradient>
+    <linearGradient id="chartLine" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#22C55E;stop-opacity:0.1"/>
+      <stop offset="50%" style="stop-color:#22C55E;stop-opacity:0.8"/>
+      <stop offset="100%" style="stop-color:#22C55E;stop-opacity:0.3"/>
+    </linearGradient>
+    <linearGradient id="chartGlow" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#22C55E;stop-opacity:0.15"/>
+      <stop offset="100%" style="stop-color:#22C55E;stop-opacity:0"/>
+    </linearGradient>
+    <linearGradient id="goldShine" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#D4B96A"/>
+      <stop offset="50%" style="stop-color:#C5A55A"/>
+      <stop offset="100%" style="stop-color:#A8894A"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="textGlow">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1280" height="640" fill="url(#bg)"/>
+
+  <!-- Subtle grid -->
+  <g opacity="0.08" stroke="#4A6FA5" stroke-width="0.5">
+    <line x1="0" y1="80" x2="1280" y2="80"/>
+    <line x1="0" y1="160" x2="1280" y2="160"/>
+    <line x1="0" y1="240" x2="1280" y2="240"/>
+    <line x1="0" y1="320" x2="1280" y2="320"/>
+    <line x1="0" y1="400" x2="1280" y2="400"/>
+    <line x1="0" y1="480" x2="1280" y2="480"/>
+    <line x1="0" y1="560" x2="1280" y2="560"/>
+    <line x1="160" y1="0" x2="160" y2="640"/>
+    <line x1="320" y1="0" x2="320" y2="640"/>
+    <line x1="480" y1="0" x2="480" y2="640"/>
+    <line x1="640" y1="0" x2="640" y2="640"/>
+    <line x1="800" y1="0" x2="800" y2="640"/>
+    <line x1="960" y1="0" x2="960" y2="640"/>
+    <line x1="1120" y1="0" x2="1120" y2="640"/>
+  </g>
+
+  <!-- Decorative chart line (uptrend) -->
+  <polyline
+    points="80,480 160,460 240,470 320,440 400,420 480,390 560,410 640,370 720,350 800,320 880,340 960,290 1040,260 1120,240 1200,210"
+    fill="none"
+    stroke="url(#chartLine)"
+    stroke-width="2.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    filter="url(#glow)"
+  />
+  <!-- Chart area fill -->
+  <polygon
+    points="80,480 160,460 240,470 320,440 400,420 480,390 560,410 640,370 720,350 800,320 880,340 960,290 1040,260 1120,240 1200,210 1200,540 80,540"
+    fill="url(#chartGlow)"
+  />
+
+  <!-- Secondary chart line (short positions) -->
+  <polyline
+    points="80,360 160,370 240,350 320,365 400,380 480,370 560,355 640,365 720,380 800,370 880,360 960,375 1040,365 1120,370 1200,358"
+    fill="none"
+    stroke="#4A6FA5"
+    stroke-width="1.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    opacity="0.4"
+    stroke-dasharray="6,4"
+  />
+
+  <!-- Candlestick decorations -->
+  <g opacity="0.12">
+    <rect x="155" y="440" width="10" height="30" fill="#22C55E" rx="1"/>
+    <line x1="160" y1="435" x2="160" y2="475" stroke="#22C55E" stroke-width="1"/>
+    <rect x="315" y="425" width="10" height="25" fill="#22C55E" rx="1"/>
+    <line x1="320" y1="420" x2="320" y2="455" stroke="#22C55E" stroke-width="1"/>
+    <rect x="475" y="380" width="10" height="20" fill="#EF4444" rx="1"/>
+    <line x1="480" y1="375" x2="480" y2="405" stroke="#EF4444" stroke-width="1"/>
+    <rect x="635" y="355" width="10" height="25" fill="#22C55E" rx="1"/>
+    <line x1="640" y1="350" x2="640" y2="385" stroke="#22C55E" stroke-width="1"/>
+    <rect x="795" y="310" width="10" height="20" fill="#22C55E" rx="1"/>
+    <line x1="800" y1="305" x2="800" y2="335" stroke="#22C55E" stroke-width="1"/>
+    <rect x="955" y="275" width="10" height="25" fill="#22C55E" rx="1"/>
+    <line x1="960" y1="270" x2="960" y2="305" stroke="#22C55E" stroke-width="1"/>
+  </g>
+
+  <!-- Main title: NEXUS v3 -->
+  <text x="640" y="235" text-anchor="middle" font-family="'Fira Code', 'SF Mono', 'Consolas', monospace" font-size="96" font-weight="700" fill="url(#goldShine)" filter="url(#textGlow)">NEXUS v3</text>
+
+  <!-- Subtitle -->
+  <text x="640" y="295" text-anchor="middle" font-family="'Fira Sans', 'Helvetica Neue', Arial, sans-serif" font-size="28" font-weight="300" fill="#E2E8F0" letter-spacing="6">Long / Short Algorithmic Trading</text>
+
+  <!-- Divider line -->
+  <line x1="400" y1="330" x2="880" y2="330" stroke="#C5A55A" stroke-width="1" opacity="0.4"/>
+
+  <!-- Feature indicators -->
+  <g font-family="'Fira Code', 'SF Mono', 'Consolas', monospace" font-size="16" fill="#94A3B8">
+    <!-- 6 Strategies -->
+    <rect x="290" y="360" width="12" height="12" rx="2" fill="#22C55E" opacity="0.8"/>
+    <text x="312" y="372">6 Strategies</text>
+
+    <!-- 4 Brokers -->
+    <rect x="530" y="360" width="12" height="12" rx="2" fill="#4A6FA5" opacity="0.8"/>
+    <text x="552" y="372">4 Brokers</text>
+
+    <!-- AI-Powered -->
+    <rect x="740" y="360" width="12" height="12" rx="2" fill="#C5A55A" opacity="0.8"/>
+    <text x="762" y="372">AI-Powered</text>
+  </g>
+
+  <!-- Version badge -->
+  <rect x="560" y="400" width="160" height="32" rx="16" fill="none" stroke="#C5A55A" stroke-width="1" opacity="0.3"/>
+  <text x="640" y="421" text-anchor="middle" font-family="'Fira Code', 'SF Mono', 'Consolas', monospace" font-size="13" fill="#C5A55A" opacity="0.6">Python 3.11+</text>
+
+  <!-- Corner accents -->
+  <path d="M0,0 L60,0 L60,3 L3,3 L3,60 L0,60 Z" fill="#C5A55A" opacity="0.2"/>
+  <path d="M1280,0 L1220,0 L1220,3 L1277,3 L1277,60 L1280,60 Z" fill="#C5A55A" opacity="0.2"/>
+  <path d="M0,640 L60,640 L60,637 L3,637 L3,580 L0,580 Z" fill="#C5A55A" opacity="0.2"/>
+  <path d="M1280,640 L1220,640 L1220,637 L1277,637 L1277,580 L1280,580 Z" fill="#C5A55A" opacity="0.2"/>
+</svg>

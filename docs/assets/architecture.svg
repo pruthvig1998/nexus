@@ -1,0 +1,171 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="720" viewBox="0 0 1000 720">
+  <defs>
+    <linearGradient id="archBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#020617"/>
+      <stop offset="100%" style="stop-color:#0F172A"/>
+    </linearGradient>
+    <filter id="dropShadow">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.3"/>
+    </filter>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#4A6FA5"/>
+    </marker>
+    <marker id="arrowGold" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#C5A55A"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1000" height="720" fill="url(#archBg)"/>
+
+  <!-- Title -->
+  <text x="500" y="38" text-anchor="middle" font-family="'Fira Code', monospace" font-size="22" font-weight="700" fill="#C5A55A">NEXUS v3 Architecture</text>
+  <text x="500" y="58" text-anchor="middle" font-family="'Fira Sans', sans-serif" font-size="13" fill="#64748B">Long / Short Algorithmic Trading System</text>
+
+  <!-- ==================== ROW 1: Market Data ==================== -->
+  <rect x="380" y="80" width="240" height="48" rx="8" fill="#1E293B" stroke="#4A6FA5" stroke-width="1.5" filter="url(#dropShadow)"/>
+  <text x="500" y="100" text-anchor="middle" font-family="'Fira Code', monospace" font-size="13" font-weight="700" fill="#E2E8F0">Market Data</text>
+  <text x="500" y="118" text-anchor="middle" font-family="'Fira Sans', sans-serif" font-size="10" fill="#64748B">yfinance / broker feeds</text>
+
+  <!-- Arrow: Market Data → Indicators -->
+  <line x1="500" y1="128" x2="500" y2="152" stroke="#4A6FA5" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ==================== ROW 2: Indicators ==================== -->
+  <rect x="350" y="155" width="300" height="48" rx="8" fill="#1E293B" stroke="#4A6FA5" stroke-width="1.5" filter="url(#dropShadow)"/>
+  <text x="500" y="175" text-anchor="middle" font-family="'Fira Code', monospace" font-size="13" font-weight="700" fill="#E2E8F0">Indicators</text>
+  <text x="500" y="193" text-anchor="middle" font-family="'Fira Sans', sans-serif" font-size="10" fill="#64748B">RSI / MACD / BB / ATR / SMA / EMA / Volume</text>
+
+  <!-- Arrow: Indicators → Strategies -->
+  <line x1="500" y1="203" x2="500" y2="232" stroke="#4A6FA5" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ==================== ROW 3: Strategies (6 boxes) ==================== -->
+  <rect x="40" y="235" width="920" height="100" rx="10" fill="none" stroke="#1E293B" stroke-width="1" stroke-dasharray="4,4"/>
+  <text x="60" y="252" font-family="'Fira Code', monospace" font-size="10" font-weight="700" fill="#C5A55A">STRATEGIES</text>
+
+  <!-- Strategy 1: Momentum -->
+  <rect x="60" y="260" width="130" height="60" rx="6" fill="#1E293B" stroke="#22C55E" stroke-width="1" filter="url(#dropShadow)"/>
+  <text x="125" y="282" text-anchor="middle" font-family="'Fira Code', monospace" font-size="11" font-weight="700" fill="#22C55E">Momentum</text>
+  <text x="125" y="298" text-anchor="middle" font-family="'Fira Sans', sans-serif" font-size="9" fill="#64748B">RSI + MACD + SMA</text>
+  <text x="125" y="312" text-anchor="middle" font-family="'Fira Sans', sans-serif" font-size="9" fill="#94A3B8">Long + Short</text>
+
+  <!-- Strategy 2: Mean Reversion -->
+  <rect x="205" y="260" width="130" height="60" rx="6" fill="#1E293B" stroke="#22C55E" stroke-width="1" filter="url(#dropShadow)"/>
+  <text x="270" y="282" text-anchor="middle" font-family="'Fira Code', monospace" font-size="11" font-weight="700" fill="#22C55E">Mean Reversion</text>
+  <text x="270" y="298" text-anchor="middle" font-family="'Fira Sans', sans-serif" font-size="9" fill="#64748B">BB + RSI extremes</text>
+  <text x="270" y="312" text-anchor="middle" font-family="'Fira Sans', sans-serif" font-size="9" fill="#94A3B8">Long + Short</text>
+
+  <!-- Strategy 3: ORB -->
+  <rect x="350" y="260" width="130" height="60" rx="6" fill="#1E293B" stroke="#22C55E" stroke-width="1" filter="url(#dropShadow)"/>
+  <text x="415" y="282" text-anchor="middle" font-family="'Fira Code', monospace" font-size="11" font-weight="700" fill="#22C55E">ORB</text>
+  <text x="415" y="298" text-anchor="middle" font-family="'Fira Sans', sans-serif" font-size="9" fill="#64748B">Opening Range</text>
+  <text x="415" y="312" text-anchor="middle" font-family="'Fira Sans', sans-serif" font-size="9" fill="#94A3B8">Breakout</text>
+
+  <!-- Strategy 4: AI Fundamental -->
+  <rect x="495" y="260" width="130" height="60" rx="6" fill="#1E293B" stroke="#C5A55A" stroke-width="1" filter="url(#dropShadow)"/>
+  <text x="560" y="282" text-anchor="middle" font-family="'Fira Code', monospace" font-size="11" font-weight="700" fill="#C5A55A">AI Fundamental</text>
+  <text x="560" y="298" text-anchor="middle" font-family="'Fira Sans', sans-serif" font-size="9" fill="#64748B">Claude Opus 4.6</text>
+  <text x="560" y="312" text-anchor="middle" font-family="'Fira Sans', sans-serif" font-size="9" fill="#94A3B8">Earnings + Guidance</text>
+
+  <!-- Strategy 5: IronGrid -->
+  <rect x="640" y="260" width="130" height="60" rx="6" fill="#1E293B" stroke="#22C55E" stroke-width="1" filter="url(#dropShadow)"/>
+  <text x="705" y="282" text-anchor="middle" font-family="'Fira Code', monospace" font-size="11" font-weight="700" fill="#22C55E">IronGrid</text>
+  <text x="705" y="298" text-anchor="middle" font-family="'Fira Sans', sans-serif" font-size="9" fill="#64748B">Grid-based entries</text>
+  <text x="705" y="312" text-anchor="middle" font-family="'Fira Sans', sans-serif" font-size="9" fill="#94A3B8">Systematic scaling</text>
+
+  <!-- Strategy 6: News Sentiment -->
+  <rect x="785" y="260" width="155" height="60" rx="6" fill="#1E293B" stroke="#C5A55A" stroke-width="1" filter="url(#dropShadow)"/>
+  <text x="862" y="282" text-anchor="middle" font-family="'Fira Code', monospace" font-size="11" font-weight="700" fill="#C5A55A">News Sentiment</text>
+  <text x="862" y="298" text-anchor="middle" font-family="'Fira Sans', sans-serif" font-size="9" fill="#64748B">Discord + news feeds</text>
+  <text x="862" y="312" text-anchor="middle" font-family="'Fira Sans', sans-serif" font-size="9" fill="#94A3B8">NLP scoring</text>
+
+  <!-- Arrow: Strategies → Risk Manager -->
+  <line x1="500" y1="335" x2="500" y2="365" stroke="#4A6FA5" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ==================== ROW 4: Risk Manager ==================== -->
+  <rect x="330" y="368" width="340" height="52" rx="8" fill="#1E293B" stroke="#EF4444" stroke-width="1.5" filter="url(#dropShadow)"/>
+  <text x="500" y="390" text-anchor="middle" font-family="'Fira Code', monospace" font-size="13" font-weight="700" fill="#EF4444">Risk Manager</text>
+  <text x="500" y="408" text-anchor="middle" font-family="'Fira Sans', sans-serif" font-size="10" fill="#64748B">Kelly + ATR sizing / Exposure caps / Circuit breakers</text>
+
+  <!-- Arrow: Risk → Engine -->
+  <line x1="500" y1="420" x2="500" y2="450" stroke="#4A6FA5" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ==================== ROW 5: Engine ==================== -->
+  <rect x="370" y="453" width="260" height="52" rx="8" fill="#1E293B" stroke="#C5A55A" stroke-width="2" filter="url(#dropShadow)"/>
+  <text x="500" y="475" text-anchor="middle" font-family="'Fira Code', monospace" font-size="14" font-weight="700" fill="#C5A55A">Engine</text>
+  <text x="500" y="495" text-anchor="middle" font-family="'Fira Sans', sans-serif" font-size="10" fill="#64748B">Scan loop / Signal-to-order routing</text>
+
+  <!-- Arrow: Engine → Brokers -->
+  <line x1="500" y1="505" x2="500" y2="540" stroke="#C5A55A" stroke-width="1.5" marker-end="url(#arrowGold)"/>
+
+  <!-- ==================== ROW 6: Brokers (4 boxes) ==================== -->
+  <rect x="120" y="543" width="760" height="75" rx="10" fill="none" stroke="#1E293B" stroke-width="1" stroke-dasharray="4,4"/>
+  <text x="140" y="558" font-family="'Fira Code', monospace" font-size="10" font-weight="700" fill="#C5A55A">BROKERS</text>
+
+  <!-- Broker 1: Alpaca -->
+  <rect x="140" y="566" width="160" height="42" rx="6" fill="#1E293B" stroke="#4A6FA5" stroke-width="1" filter="url(#dropShadow)"/>
+  <text x="220" y="585" text-anchor="middle" font-family="'Fira Code', monospace" font-size="12" font-weight="700" fill="#4A6FA5">Alpaca</text>
+  <text x="220" y="601" text-anchor="middle" font-family="'Fira Sans', sans-serif" font-size="9" fill="#64748B">Paper + Live / REST API</text>
+
+  <!-- Broker 2: Moomoo -->
+  <rect x="320" y="566" width="160" height="42" rx="6" fill="#1E293B" stroke="#4A6FA5" stroke-width="1" filter="url(#dropShadow)"/>
+  <text x="400" y="585" text-anchor="middle" font-family="'Fira Code', monospace" font-size="12" font-weight="700" fill="#4A6FA5">Moomoo</text>
+  <text x="400" y="601" text-anchor="middle" font-family="'Fira Sans', sans-serif" font-size="9" fill="#64748B">OpenD Gateway</text>
+
+  <!-- Broker 3: IBKR -->
+  <rect x="500" y="566" width="160" height="42" rx="6" fill="#1E293B" stroke="#4A6FA5" stroke-width="1" filter="url(#dropShadow)"/>
+  <text x="580" y="585" text-anchor="middle" font-family="'Fira Code', monospace" font-size="12" font-weight="700" fill="#4A6FA5">IBKR</text>
+  <text x="580" y="601" text-anchor="middle" font-family="'Fira Sans', sans-serif" font-size="9" fill="#64748B">TWS / IB Gateway</text>
+
+  <!-- Broker 4: Webull -->
+  <rect x="680" y="566" width="160" height="42" rx="6" fill="#1E293B" stroke="#4A6FA5" stroke-width="1" filter="url(#dropShadow)"/>
+  <text x="760" y="585" text-anchor="middle" font-family="'Fira Code', monospace" font-size="12" font-weight="700" fill="#4A6FA5">Webull</text>
+  <text x="760" y="601" text-anchor="middle" font-family="'Fira Sans', sans-serif" font-size="9" fill="#64748B">REST API</text>
+
+  <!-- ==================== Side components ==================== -->
+
+  <!-- Left side: Dashboard -->
+  <rect x="40" y="420" width="160" height="85" rx="8" fill="#1E293B" stroke="#22C55E" stroke-width="1" filter="url(#dropShadow)"/>
+  <text x="120" y="445" text-anchor="middle" font-family="'Fira Code', monospace" font-size="12" font-weight="700" fill="#22C55E">Dashboard</text>
+  <text x="120" y="462" text-anchor="middle" font-family="'Fira Sans', sans-serif" font-size="9" fill="#64748B">Rich Terminal UI</text>
+  <text x="120" y="477" text-anchor="middle" font-family="'Fira Sans', sans-serif" font-size="9" fill="#94A3B8">Positions / Signals</text>
+  <text x="120" y="492" text-anchor="middle" font-family="'Fira Sans', sans-serif" font-size="9" fill="#94A3B8">P&amp;L / Exposure</text>
+
+  <!-- Arrow: Engine → Dashboard -->
+  <line x1="370" y1="479" x2="205" y2="462" stroke="#22C55E" stroke-width="1" marker-end="url(#arrow)" opacity="0.6"/>
+
+  <!-- Right side: Tracker + Discord -->
+  <rect x="760" y="395" width="190" height="52" rx="8" fill="#1E293B" stroke="#4A6FA5" stroke-width="1" filter="url(#dropShadow)"/>
+  <text x="855" y="417" text-anchor="middle" font-family="'Fira Code', monospace" font-size="12" font-weight="700" fill="#E2E8F0">Tracker</text>
+  <text x="855" y="435" text-anchor="middle" font-family="'Fira Sans', sans-serif" font-size="9" fill="#64748B">SQLite / P&amp;L / Trade log</text>
+
+  <!-- Arrow: Engine → Tracker -->
+  <line x1="630" y1="470" x2="755" y2="421" stroke="#4A6FA5" stroke-width="1" marker-end="url(#arrow)" opacity="0.6"/>
+
+  <rect x="760" y="458" width="190" height="52" rx="8" fill="#1E293B" stroke="#7C3AED" stroke-width="1" filter="url(#dropShadow)"/>
+  <text x="855" y="480" text-anchor="middle" font-family="'Fira Code', monospace" font-size="12" font-weight="700" fill="#7C3AED">Discord Feed</text>
+  <text x="855" y="498" text-anchor="middle" font-family="'Fira Sans', sans-serif" font-size="9" fill="#64748B">Alerts / Trade notifications</text>
+
+  <!-- Arrow: Engine → Discord -->
+  <line x1="630" y1="485" x2="755" y2="484" stroke="#7C3AED" stroke-width="1" marker-end="url(#arrow)" opacity="0.6"/>
+
+  <!-- ==================== Legend ==================== -->
+  <rect x="40" y="640" width="920" height="55" rx="8" fill="#0F172A" stroke="#1E293B" stroke-width="1"/>
+
+  <rect x="60" y="658" width="10" height="10" rx="2" fill="#22C55E"/>
+  <text x="78" y="668" font-family="'Fira Sans', sans-serif" font-size="11" fill="#94A3B8">Technical strategies</text>
+
+  <rect x="230" y="658" width="10" height="10" rx="2" fill="#C5A55A"/>
+  <text x="248" y="668" font-family="'Fira Sans', sans-serif" font-size="11" fill="#94A3B8">AI-powered strategies</text>
+
+  <rect x="430" y="658" width="10" height="10" rx="2" fill="#4A6FA5"/>
+  <text x="448" y="668" font-family="'Fira Sans', sans-serif" font-size="11" fill="#94A3B8">Infrastructure</text>
+
+  <rect x="580" y="658" width="10" height="10" rx="2" fill="#EF4444"/>
+  <text x="598" y="668" font-family="'Fira Sans', sans-serif" font-size="11" fill="#94A3B8">Risk controls</text>
+
+  <rect x="720" y="658" width="10" height="10" rx="2" fill="#7C3AED"/>
+  <text x="738" y="668" font-family="'Fira Sans', sans-serif" font-size="11" fill="#94A3B8">Notifications</text>
+
+  <!-- Data flow label -->
+  <text x="500" y="688" text-anchor="middle" font-family="'Fira Code', monospace" font-size="10" fill="#475569">Market Data --> Indicators --> Strategies --> Risk Manager --> Engine --> Broker</text>
+</svg>

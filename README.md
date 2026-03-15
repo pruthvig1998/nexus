@@ -1,70 +1,224 @@
 <div align="center">
 
-<!-- Animated Hero Header -->
-<img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=6,11,20&height=200&section=header&text=NEXUS%20v3&fontSize=90&fontColor=fff&animation=twinkling&fontAlignY=38&desc=Long%20%2F%20Short%20Algorithmic%20Trading&descAlignY=62&descSize=25" width="100%" />
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!--                              HERO HEADER                                  -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+
+<img src="https://capsule-render.vercel.app/api?type=waving&color=0:0F172A,50:1E293B,100:0F172A&height=220&section=header&text=NEXUS%20v3&fontSize=90&fontColor=F8FAFC&animation=twinkling&fontAlignY=35&desc=Production-Grade%20Long%20%2F%20Short%20Algorithmic%20Trading&descAlignY=60&descSize=22&descColor=C5A55A" width="100%" />
 
 <br/>
 
-<!-- Badges -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!--                               BADGES                                      -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
 
-[![CI](https://img.shields.io/github/actions/workflow/status/pruthvig1998/nexus/ci.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=CI)](https://github.com/pruthvig1998/nexus/actions)
-[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
-[![Alpaca](https://img.shields.io/badge/Broker-Alpaca%20Markets-FFDC00?style=for-the-badge&logo=alpacadotmarkets&logoColor=black)](https://alpaca.markets/)
-[![Claude](https://img.shields.io/badge/AI-Claude%20Opus%204.6-D4A574?style=for-the-badge&logo=anthropic&logoColor=white)](https://anthropic.com/)
+[![CI](https://img.shields.io/github/actions/workflow/status/pruthvig1998/nexus/ci.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=CI&color=22C55E)](https://github.com/pruthvig1998/nexus/actions)
+[![Python](https://img.shields.io/badge/Python-3.11+-0F172A?style=for-the-badge&logo=python&logoColor=F59E0B)](https://www.python.org/)
+[![Brokers](https://img.shields.io/badge/Brokers-Alpaca%20%C2%B7%20Moomoo%20%C2%B7%20IBKR%20%C2%B7%20Webull-1E293B?style=for-the-badge&logo=bitcoin&logoColor=C5A55A)](https://alpaca.markets/)
+[![Claude](https://img.shields.io/badge/AI-Claude%20Opus%204.6-8B5CF6?style=for-the-badge&logo=anthropic&logoColor=white)](https://anthropic.com/)
 [![License](https://img.shields.io/badge/License-MIT-C5A55A?style=for-the-badge)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/pruthvig1998/nexus?style=for-the-badge&logo=github&color=4A6FA5)](https://github.com/pruthvig1998/nexus)
+[![Stars](https://img.shields.io/github/stars/pruthvig1998/nexus?style=for-the-badge&logo=github&color=F59E0B&logoColor=F8FAFC)](https://github.com/pruthvig1998/nexus)
 
 <br/><br/>
 
-<!-- Animated Typing SVG -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!--                           TYPING ANIMATION                                 -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+
 <a href="https://github.com/pruthvig1998/nexus">
-  <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&size=22&pause=1000&color=C5A55A&center=true&vCenter=true&width=700&lines=%E2%9A%A1+NEXUS+v3+%E2%80%94+Trade+Both+Directions;Long+%2F+Short+Equity+Signals;Kelly+%2B+ATR+Position+Sizing;Powered+by+Claude+Opus+4.6;Sharpe%3A+2.90+%C2%B7+CAGR%3A+33.5%25" alt="Typing SVG" />
+  <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&size=22&pause=1000&color=C5A55A&center=true&vCenter=true&width=750&lines=NEXUS+v3+%E2%80%94+Institutional+Algorithmic+Trading;Multi-Broker+%C2%B7+Long+%2F+Short+%C2%B7+AI-Powered;Kelly+%2B+ATR+Position+Sizing+%C2%B7+4-Layer+Risk;Sharpe%3A+2.90+%C2%B7+CAGR%3A+33.5%25+%C2%B7+Max+DD%3A+1.5%25;15-Year+Walk-Forward+Validated+%C2%B7+20+Tickers" alt="Typing SVG" />
 </a>
 
-<br/>
+<br/><br/>
 
-> **Production-grade long/short algorithmic trading system** built in Python.
-> Combines momentum, mean reversion, and AI-driven fundamental analysis
-> with institutional-quality risk management and real-time portfolio tracking.
+<table>
+<tr>
+<td>
+
+> **A production-grade long/short algorithmic trading system** built in Python.
+> Combines momentum, mean reversion, IronGrid, news sentiment, and AI-driven
+> fundamental analysis with institutional-quality risk management, multi-broker
+> execution, Discord integration, and real-time portfolio tracking.
+
+</td>
+</tr>
+</table>
 
 <br/>
 
 </div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!--                          FEATURES BENTO GRID                               -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+
+<div align="center">
+<h2>Features</h2>
+</div>
+
+<div align="center">
+<table>
+<tr>
+<td width="33%" align="center">
+<br/>
+<strong>MULTI-BROKER EXECUTION</strong>
+<br/><br/>
+Alpaca &middot; Moomoo &middot; IBKR &middot; Webull
+<br/>
+Pluggable broker interface with unified
+<br/>
+order routing and position management
+<br/><br/>
+</td>
+<td width="33%" align="center">
+<br/>
+<strong>5 STRATEGY ENGINES</strong>
+<br/><br/>
+Momentum &middot; Mean Reversion
+<br/>
+IronGrid &middot; News Sentiment
+<br/>
+AI Fundamental (Claude Opus 4.6)
+<br/><br/>
+</td>
+<td width="33%" align="center">
+<br/>
+<strong>LONG / SHORT EQUITY</strong>
+<br/><br/>
+Directional signals on both sides
+<br/>
+Short-specific safeguards and borrow checks
+<br/>
+Independent exposure caps per leg
+<br/><br/>
+</td>
+</tr>
+<tr>
+<td width="33%" align="center">
+<br/>
+<strong>4-LAYER RISK FRAMEWORK</strong>
+<br/><br/>
+Signal quality filter
+<br/>
+Kelly + ATR position sizing
+<br/>
+Exposure caps &middot; Circuit breakers
+<br/><br/>
+</td>
+<td width="33%" align="center">
+<br/>
+<strong>DISCORD INTEGRATION</strong>
+<br/><br/>
+Live trade feed to Discord channels
+<br/>
+Export loader for historical signal replay
+<br/>
+Real-time P&L and position updates
+<br/><br/>
+</td>
+<td width="33%" align="center">
+<br/>
+<strong>RICH TERMINAL DASHBOARD</strong>
+<br/><br/>
+Live positions &middot; Signals &middot; P&L
+<br/>
+Exposure monitoring &middot; Trade log
+<br/>
+Headless mode for CI / cron
+<br/><br/>
+</td>
+</tr>
+<tr>
+<td width="33%" align="center">
+<br/>
+<strong>BACKTEST ENGINE</strong>
+<br/><br/>
+Walk-forward validation
+<br/>
+15-year / 20-ticker verified
+<br/>
+JSON output for programmatic analysis
+<br/><br/>
+</td>
+<td width="33%" align="center">
+<br/>
+<strong>INSTITUTIONAL LOGGING</strong>
+<br/><br/>
+Structured JSON trade audit trail
+<br/>
+Every order, fill, and signal recorded
+<br/>
+Full reproducibility
+<br/><br/>
+</td>
+<td width="33%" align="center">
+<br/>
+<strong>EXTENSIBLE ARCHITECTURE</strong>
+<br/><br/>
+15 core modules &middot; Clean interfaces
+<br/>
+Add brokers, strategies, indicators
+<br/>
+pip install -e ".[dev]"
+<br/><br/>
+</td>
+</tr>
+</table>
+</div>
+
+<br/>
 
 ---
 
-## 📊 Performance (2-Year Backtest · $100k Initial Capital)
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!--                         2-YEAR BACKTEST RESULTS                            -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
 
 <div align="center">
 
-> **Universe:** `AAPL` · `MSFT` · `NVDA` · `GOOGL` · `JPM` · `AMD` &nbsp;&nbsp;|&nbsp;&nbsp; **Period:** 2024-03-14 → 2026-03-14
+## Performance — 2-Year Backtest
+
+**$100k Initial Capital**
 
 <br/>
 
-</div>
+> **Universe:** `AAPL` &middot; `MSFT` &middot; `NVDA` &middot; `GOOGL` &middot; `JPM` &middot; `AMD` &nbsp;&nbsp;|&nbsp;&nbsp; **Period:** 2024-03-14 &rarr; 2026-03-14
+
+<br/>
 
 | Metric | Value | Target | Status |
 |:--|--:|--:|:--:|
-| **Sharpe Ratio** | **2.90** | > 1.5 | ✅ |
-| **CAGR** | **33.5%** | > 15% | ✅ |
-| **Max Drawdown** | **1.5%** | < 10% | ✅ |
-| **Total Trades** | **231** (126 Long / 105 Short) | — | ✅ |
-| **Win Rate** | **58%** | > 50% | ✅ |
-| **Profit Factor** | **2.1x** | > 1.5x | ✅ |
-| **Daily VaR (95%)** | **0.8%** | < 2% | ✅ |
+| **Sharpe Ratio** | **2.90** | > 1.5 | &#x2713; |
+| **CAGR** | **33.5%** | > 15% | &#x2713; |
+| **Max Drawdown** | **1.5%** | < 10% | &#x2713; |
+| **Total Trades** | **231** (126 Long / 105 Short) | — | &#x2713; |
+| **Win Rate** | **58%** | > 50% | &#x2713; |
+| **Profit Factor** | **2.1x** | > 1.5x | &#x2713; |
+| **Daily VaR (95%)** | **0.8%** | < 2% | &#x2713; |
 | **Initial Capital** | $100,000 | — | — |
-| **Final Equity** | **$178,200** | — | 🚀 |
+| **Final Equity** | **$178,200** | — | **+78.2%** |
 
 <br/>
 
+</div>
+
 ---
 
-## 📈 15-Year Walk-Forward · 20 Tickers · Large / Mid / Small Cap
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!--                     15-YEAR WALK-FORWARD RESULTS                           -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
 
 <div align="center">
 
-> **Universe:** 20 tickers across Technology · Financials · Healthcare · Energy · Consumer · Industrial
-> **Period:** 2011 → 2026 &nbsp;|&nbsp; **Total Trades:** 24,373 (19,364 Long / 5,009 Short)
+## 15-Year Walk-Forward — 20 Tickers — Large / Mid / Small Cap
+
+<br/>
+
+> **Universe:** 20 tickers across Technology &middot; Financials &middot; Healthcare &middot; Energy &middot; Consumer &middot; Industrial
+>
+> **Period:** 2011 &rarr; 2026 &nbsp;|&nbsp; **Total Trades:** 24,373 (19,364 Long / 5,009 Short)
+
+<br/>
 
 </div>
 
@@ -90,52 +244,190 @@
 | FIZZ | Small | Beverages | 2.89 | 3.0% | 1.7% | 92% | 866 | 198 |
 | EXPO | Small | Consulting | 2.83 | 2.5% | 1.3% | 92% | 943 | 269 |
 | BKE | Small | Retail | 2.86 | 3.3% | 1.4% | 90% | 970 | 258 |
-| **Portfolio Avg** | — | — | **2.83** | **2.9%** | **1.3%** | **91%** | **19,364** | **5,009** |
+| **Portfolio Avg** | **—** | **—** | **2.83** | **2.9%** | **1.3%** | **91%** | **19,364** | **5,009** |
+
+<div align="center">
 
 > All targets cleared on every ticker. Short book consistently profitable. Max drawdown never exceeded 2.0% on any ticker over 15 years.
 
-<br/>
-
----
-
-## 🧩 System Overview
-
-```
-  ┌──────────────────────────────────────────────────────────────────────────┐
-  │                           N E X U S   v 3                              │
-  │            Long / Short Algorithmic Trading Engine                      │
-  ├──────────────────────────────────────────────────────────────────────────┤
-  │                                                                        │
-  │   Market Data ───► Indicators ───► Strategies ───► Risk Manager        │
-  │        │                │               │               │              │
-  │        ▼                ▼               ▼               ▼              │
-  │   ┌──────────┐   ┌───────────┐   ┌───────────┐   ┌───────────┐       │
-  │   │  Alpaca   │   │ RSI/MACD  │   │ Momentum  │   │  Kelly +  │       │
-  │   │  Broker   │   │  BB/ATR   │   │ MeanRev   │   │  ATR Size │       │
-  │   │  API      │   │ SMA/EMA   │   │ AI Fund.  │   │  Exposure │       │
-  │   └──────────┘   └───────────┘   └───────────┘   └───────────┘       │
-  │        │                               │               │              │
-  │        ▼                               ▼               ▼              │
-  │   ┌──────────┐                  ┌───────────┐   ┌───────────┐        │
-  │   │  Engine  │◄─────────────────│  Tracker   │   │  Logger   │        │
-  │   │   Loop   │                  │  P&L/Pos   │   │  Trades   │        │
-  │   └──────────┘                  └───────────┘   └───────────┘        │
-  │        │                                                              │
-  │        ▼                                                              │
-  │   ┌───────────────────────────────────────────┐                       │
-  │   │        Rich Terminal Dashboard            │                       │
-  │   │    Positions · Signals · P&L · Exposure   │                       │
-  │   └───────────────────────────────────────────┘                       │
-  │                                                                        │
-  └──────────────────────────────────────────────────────────────────────────┘
-```
+</div>
 
 <br/>
 
 ---
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!--                           SYSTEM OVERVIEW                                  -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+
+<div align="center">
+
+## System Overview
+
+</div>
+
+```
+  ╔══════════════════════════════════════════════════════════════════════════════╗
+  ║                                                                            ║
+  ║                        N  E  X  U  S      v  3                             ║
+  ║              Production Long / Short Trading Engine                        ║
+  ║                                                                            ║
+  ╠══════════════════════════════════════════════════════════════════════════════╣
+  ║                                                                            ║
+  ║   DATA LAYER              SIGNAL LAYER             EXECUTION LAYER         ║
+  ║   ─────────               ────────────             ───────────────         ║
+  ║                                                                            ║
+  ║   ┌──────────────┐    ┌─────────────────┐    ┌──────────────────┐         ║
+  ║   │ Market Data  │───>│   Indicators    │───>│  Risk Manager    │         ║
+  ║   │              │    │                 │    │                  │         ║
+  ║   │  Alpaca      │    │  RSI  · MACD    │    │  Kelly + ATR     │         ║
+  ║   │  Moomoo      │    │  BB   · ATR     │    │  Exposure Caps   │         ║
+  ║   │  IBKR        │    │  SMA  · EMA     │    │  Circuit Breaker │         ║
+  ║   │  Webull       │    │                 │    │                  │         ║
+  ║   └──────┬───────┘    └────────┬────────┘    └────────┬─────────┘         ║
+  ║          │                     │                      │                    ║
+  ║          │            ┌────────▼────────┐             │                    ║
+  ║          │            │   Strategies    │             │                    ║
+  ║          │            │                 │             │                    ║
+  ║          │            │  Momentum       │             │                    ║
+  ║          │            │  Mean Reversion │             │                    ║
+  ║          │            │  IronGrid       │             │                    ║
+  ║          │            │  News Sentiment │             │                    ║
+  ║          │            │  AI Fundamental │             │                    ║
+  ║          │            └────────┬────────┘             │                    ║
+  ║          │                     │                      │                    ║
+  ║          ▼                     ▼                      ▼                    ║
+  ║   ┌══════════════════════════════════════════════════════════════┐         ║
+  ║   ║                    TRADING ENGINE                           ║         ║
+  ║   ║    Signal Aggregation ──> Sizing ──> Order Routing          ║         ║
+  ║   ╚══════════════════════════════════════════════════════════════╝         ║
+  ║          │                     │                      │                    ║
+  ║          ▼                     ▼                      ▼                    ║
+  ║   ┌──────────────┐    ┌───────────────┐    ┌──────────────────┐          ║
+  ║   │   Tracker    │    │  Dashboard    │    │  Discord Feed    │          ║
+  ║   │   P&L / Pos  │    │  Rich TUI     │    │  Live Alerts     │          ║
+  ║   └──────────────┘    └───────────────┘    └──────────────────┘          ║
+  ║                                                                            ║
+  ╚══════════════════════════════════════════════════════════════════════════════╝
+```
+
+<br/>
+
+---
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!--                            TECH STACK                                      -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+
+<div align="center">
+
+## Tech Stack
+
+<br/>
+
+<table>
+<tr>
+<td align="center" width="140">
+<br/>
+<strong>Python 3.11+</strong>
+<br/>
+Core Runtime
+<br/><br/>
+</td>
+<td align="center" width="140">
+<br/>
+<strong>Claude Opus 4.6</strong>
+<br/>
+AI Analysis
+<br/><br/>
+</td>
+<td align="center" width="140">
+<br/>
+<strong>Alpaca API</strong>
+<br/>
+Primary Broker
+<br/><br/>
+</td>
+<td align="center" width="140">
+<br/>
+<strong>Moomoo SDK</strong>
+<br/>
+Broker
+<br/><br/>
+</td>
+<td align="center" width="140">
+<br/>
+<strong>IBKR TWS</strong>
+<br/>
+Broker
+<br/><br/>
+</td>
+<td align="center" width="140">
+<br/>
+<strong>Webull API</strong>
+<br/>
+Broker
+<br/><br/>
+</td>
+</tr>
+<tr>
+<td align="center" width="140">
+<br/>
+<strong>Rich</strong>
+<br/>
+Terminal UI
+<br/><br/>
+</td>
+<td align="center" width="140">
+<br/>
+<strong>pandas</strong>
+<br/>
+Data Analysis
+<br/><br/>
+</td>
+<td align="center" width="140">
+<br/>
+<strong>NumPy</strong>
+<br/>
+Numerics
+<br/><br/>
+</td>
+<td align="center" width="140">
+<br/>
+<strong>discord.py</strong>
+<br/>
+Live Feed
+<br/><br/>
+</td>
+<td align="center" width="140">
+<br/>
+<strong>pytest</strong>
+<br/>
+Testing
+<br/><br/>
+</td>
+<td align="center" width="140">
+<br/>
+<strong>ruff</strong>
+<br/>
+Linting
+<br/><br/>
+</td>
+</tr>
+</table>
+
+<br/>
+
+</div>
+
+---
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!--                           ARCHITECTURE                                     -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
 
 <details>
-<summary><h2>🏗️ Architecture — 12 Core Modules</h2></summary>
+<summary><h2>Architecture — 15 Core Modules</h2></summary>
 
 <br/>
 
@@ -145,7 +437,7 @@
                       └──────┬──────┘
                              │
                       ┌──────▼──────┐
-                      │    main     │    CLI parser (run / backtest / status)
+                      │    main     │    CLI parser (run / backtest / status / load-discord)
                       └──────┬──────┘
                              │
                 ┌────────────┼────────────┐
@@ -159,19 +451,28 @@
       │         │         │
   ┌───▼───┐ ┌──▼────┐ ┌──▼─────┐
   │broker │ │strategy│ │  risk  │
-  │Alpaca │ │signals │ │manager │
-  └───────┘ └──┬────┘ └────────┘
+  │ layer │ │signals │ │manager │
+  └───┬───┘ └──┬────┘ └────────┘
+      │        │
+  ┌───▼────────▼─────────────────────────────────┐
+  │  Broker Adapters    │  Strategy Engines       │
+  │  ─────────────────  │  ────────────────       │
+  │  broker.py (Alpaca) │  strategy.py (Mom/MR)   │
+  │  broker_moomoo.py   │  strategy_irongrid.py   │
+  │  broker_ibkr.py     │  strategy_news.py       │
+  │  broker_webull.py   │  AI Fundamental (LLM)   │
+  └──────────────────────────────────────────────┘
                │
          ┌─────▼─────┐
          │indicators │      RSI · MACD · BB · ATR · SMA · EMA
          └───────────┘
                 │
-    ┌───────────┼───────────┐
-    │           │           │
-  ┌─▼──────┐ ┌─▼────────┐ ┌▼──────────┐
-  │tracker │ │ dashboard │ │  logger   │
-  │ P&L    │ │  Rich TUI │ │ JSON logs │
-  └────────┘ └──────────┘ └───────────┘
+    ┌───────────┼───────────┬───────────┐
+    │           │           │           │
+  ┌─▼──────┐ ┌─▼────────┐ ┌▼─────────┐ ┌▼──────────────┐
+  │tracker │ │ dashboard │ │ logger   │ │ discord_feed  │
+  │ P&L    │ │  Rich TUI │ │ JSON log │ │ discord_loader│
+  └────────┘ └──────────┘ └──────────┘ └───────────────┘
 ```
 
 <br/>
@@ -181,15 +482,21 @@
 | 1 | **Config** | `config.py` | Load `.env`, validate keys, set trading parameters |
 | 2 | **Logger** | `logger.py` | Structured JSON logging, trade audit trail |
 | 3 | **Indicators** | `indicators.py` | RSI, MACD, Bollinger Bands, ATR, SMA, EMA |
-| 4 | **Strategy** | `strategy.py` | Signal generation: Momentum, MeanRev, AI Fundamental |
-| 5 | **Risk** | `risk.py` | Kelly+ATR sizing, exposure caps, drawdown halt |
-| 6 | **Tracker** | `tracker.py` | Position tracking, realized/unrealized P&L |
-| 7 | **Broker** | `broker.py` | Alpaca API wrapper (paper + live), order routing |
-| 8 | **Engine** | `engine.py` | Main trading loop, signal-to-order orchestration |
-| 9 | **Dashboard** | `dashboard.py` | Rich terminal UI: positions, signals, exposure |
-| 10 | **Backtest** | `backtest.py` | Historical simulation, performance analytics |
-| 11 | **Main** | `main.py` | CLI entrypoint, subcommand routing |
-| 12 | **\_\_main\_\_** | `__main__.py` | `python -m nexus` package runner |
+| 4 | **Strategy** | `strategy.py` | Signal generation: Momentum, Mean Reversion, AI Fundamental |
+| 5 | **IronGrid** | `strategy_irongrid.py` | Grid-based accumulation and distribution strategy |
+| 6 | **News Sentiment** | `strategy_news.py` | NLP-driven sentiment signals from news feeds |
+| 7 | **Risk** | `risk.py` | Kelly+ATR sizing, exposure caps, drawdown halt |
+| 8 | **Tracker** | `tracker.py` | Position tracking, realized/unrealized P&L |
+| 9 | **Broker (Alpaca)** | `broker.py` | Alpaca API wrapper (paper + live), order routing |
+| 10 | **Broker (Moomoo)** | `broker_moomoo.py` | Moomoo/Futu adapter |
+| 11 | **Broker (IBKR)** | `broker_ibkr.py` | Interactive Brokers TWS/Gateway adapter |
+| 12 | **Broker (Webull)** | `broker_webull.py` | Webull API adapter |
+| 13 | **Engine** | `engine.py` | Main trading loop, signal-to-order orchestration |
+| 14 | **Dashboard** | `dashboard.py` | Rich terminal UI: positions, signals, exposure |
+| 15 | **Discord** | `discord_feed.py` / `discord_loader.py` | Live trade feed + historical export loader |
+| 16 | **Backtest** | `backtest.py` | Historical simulation, performance analytics |
+| 17 | **Main** | `main.py` | CLI entrypoint, subcommand routing |
+| 18 | **\_\_main\_\_** | `__main__.py` | `python -m nexus` package runner |
 
 </details>
 
@@ -197,8 +504,12 @@
 
 ---
 
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!--                            STRATEGIES                                      -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+
 <details>
-<summary><h2>🧠 Strategies (Long + Short)</h2></summary>
+<summary><h2>Strategies — Long + Short</h2></summary>
 
 <br/>
 
@@ -206,12 +517,16 @@
 
 | Strategy | Direction | Entry Signal | Exit Signal | Timeframe |
 |:--|:--:|:--|:--|:--:|
-| **Momentum** | 📈 Long | RSI > 55 AND MACD crossover AND price > SMA(50) | RSI > 75 OR trailing stop hit | Daily |
-| **Momentum** | 📉 Short | RSI < 45 AND MACD crossunder AND price < SMA(50) | RSI < 25 OR trailing stop hit | Daily |
-| **Mean Reversion** | 📈 Long | Price < lower Bollinger Band AND RSI < 30 | Price returns to SMA(20) midline | Daily |
-| **Mean Reversion** | 📉 Short | Price > upper Bollinger Band AND RSI > 70 | Price returns to SMA(20) midline | Daily |
-| **AI Fundamental** | 📈 Long | Claude Opus 4.6 scores earnings/guidance ≥ 7/10 bullish | Score drops below 5 OR catalyst expires | Event |
-| **AI Fundamental** | 📉 Short | Claude Opus 4.6 scores earnings/guidance ≤ 3/10 bearish | Score rises above 5 OR catalyst expires | Event |
+| **Momentum** | Long | RSI > 55 AND MACD crossover AND price > SMA(50) | RSI > 75 OR trailing stop hit | Daily |
+| **Momentum** | Short | RSI < 45 AND MACD crossunder AND price < SMA(50) | RSI < 25 OR trailing stop hit | Daily |
+| **Mean Reversion** | Long | Price < lower Bollinger Band AND RSI < 30 | Price returns to SMA(20) midline | Daily |
+| **Mean Reversion** | Short | Price > upper Bollinger Band AND RSI > 70 | Price returns to SMA(20) midline | Daily |
+| **IronGrid** | Long | Price hits grid buy level in accumulation zone | Grid sell level hit OR position cap reached | Intraday |
+| **IronGrid** | Short | Price hits grid sell level in distribution zone | Grid buy level hit OR position cap reached | Intraday |
+| **News Sentiment** | Long | NLP sentiment score >= 0.7 on catalyst event | Sentiment decays below 0.4 OR time expiry | Event |
+| **News Sentiment** | Short | NLP sentiment score <= 0.3 on negative catalyst | Sentiment rises above 0.6 OR time expiry | Event |
+| **AI Fundamental** | Long | Claude Opus 4.6 scores earnings/guidance >= 7/10 bullish | Score drops below 5 OR catalyst expires | Event |
+| **AI Fundamental** | Short | Claude Opus 4.6 scores earnings/guidance <= 3/10 bearish | Score rises above 5 OR catalyst expires | Event |
 
 <br/>
 
@@ -220,13 +535,13 @@
 Each signal receives a composite score from **0 to 10**:
 
 ```
-Composite Score = (0.35 × Momentum) + (0.30 × MeanRev) + (0.35 × AI_Fundamental)
+Composite Score = (0.25 x Momentum) + (0.20 x MeanRev) + (0.15 x IronGrid) + (0.15 x NewsSentiment) + (0.25 x AI_Fundamental)
 ```
 
 | Score Range | Action |
 |:--:|:--|
-| **≥ 7** | Open Long position |
-| **≤ 3** | Open Short position |
+| **>= 7** | Open Long position |
+| **<= 3** | Open Short position |
 | **3 < score < 7** | No action (dead zone) |
 
 <br/>
@@ -237,11 +552,11 @@ The AI Fundamental strategy uses **Claude Opus 4.6** (Anthropic) to analyze:
 
 | Input | What It Evaluates |
 |:--|:--|
-| 📄 Earnings transcripts | Tone, surprise quality, management confidence |
-| 📈 Revenue / EPS surprise | Magnitude and composition of beats/misses |
-| 🔮 Forward guidance | Revisions vs. consensus, implied trajectory |
-| 🏭 Sector / macro | Industry headwinds, tailwinds, competitive shifts |
-| 🧮 Valuation | Current multiples vs. growth rate, historical range |
+| Earnings transcripts | Tone, surprise quality, management confidence |
+| Revenue / EPS surprise | Magnitude and composition of beats/misses |
+| Forward guidance | Revisions vs. consensus, implied trajectory |
+| Sector / macro context | Industry headwinds, tailwinds, competitive shifts |
+| Valuation metrics | Current multiples vs. growth rate, historical range |
 
 </details>
 
@@ -249,8 +564,12 @@ The AI Fundamental strategy uses **Claude Opus 4.6** (Anthropic) to analyze:
 
 ---
 
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!--                          RISK MANAGEMENT                                   -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+
 <details>
-<summary><h2>🛡️ Risk Management</h2></summary>
+<summary><h2>Risk Management</h2></summary>
 
 <br/>
 
@@ -258,22 +577,22 @@ The AI Fundamental strategy uses **Claude Opus 4.6** (Anthropic) to analyze:
 
 ```
 Layer 1 ─── Signal Quality Filter
-│           Only act on composite score ≥ 7 (long) or ≤ 3 (short)
+│           Only act on composite score >= 7 (long) or <= 3 (short)
 │
 Layer 2 ─── Position Sizing: Kelly + ATR
 │           Kelly fraction capped at 25% of portfolio per position
-│           ATR-based stop: 2× ATR(14) from entry
+│           ATR-based stop: 2x ATR(14) from entry
 │           Position size = min(Kelly%, risk_budget / ATR_stop)
 │
 Layer 3 ─── Portfolio Exposure Caps
 │           Max gross exposure: 150% (long + |short|)
 │           Max long exposure:  100%
-│           Max short exposure:  50%  ← separately capped
+│           Max short exposure:  50%  <-- separately capped
 │           Max single position:  10% of portfolio
 │
 Layer 4 ─── Circuit Breakers
-            Daily loss halt: −2% of portfolio → stop trading for day
-            Drawdown breaker: −15% from peak equity → liquidate all
+            Daily loss halt: -2% of portfolio --> stop trading for day
+            Drawdown breaker: -15% from peak equity --> liquidate all
 ```
 
 <br/>
@@ -300,10 +619,10 @@ position_size  = min(shares, max_position_cap)
 
 | Safeguard | Rule |
 |:--|:--|
-| **Borrow check** | Verify shortability via Alpaca before entry |
+| **Borrow check** | Verify shortability via broker API before entry |
 | **Exposure cap** | Short side capped at 50% of portfolio |
 | **Uptick filter** | Avoid shorting into strong upward momentum |
-| **Cover trigger** | Auto-cover if short P&L exceeds −5% per position |
+| **Cover trigger** | Auto-cover if short P&L exceeds -5% per position |
 
 </details>
 
@@ -311,8 +630,55 @@ position_size  = min(shares, max_position_cap)
 
 ---
 
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!--                          DISCORD INTEGRATION                               -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+
 <details>
-<summary><h2>⚙️ Quick Start & CLI</h2></summary>
+<summary><h2>Discord Integration</h2></summary>
+
+<br/>
+
+NEXUS integrates with Discord for real-time trade notifications and historical signal management.
+
+### Live Feed (`discord_feed.py`)
+
+Streams trade events to a configured Discord channel:
+
+- Order submissions and fills (long and short)
+- Position opens and closes with P&L
+- Daily portfolio summary (equity, exposure, Sharpe)
+- Risk events (drawdown warnings, circuit breaker activations)
+
+### Export Loader (`discord_loader.py`)
+
+Replays historical signals exported from Discord:
+
+```bash
+# Load signals from a Discord channel export
+python -m nexus load-discord --file signals_export.json --replay
+```
+
+### Configuration
+
+```env
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+DISCORD_CHANNEL_ID=your_channel_id
+DISCORD_BOT_TOKEN=your_bot_token          # optional, for loader
+```
+
+</details>
+
+<br/>
+
+---
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!--                          QUICK START & CLI                                 -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+
+<details>
+<summary><h2>Quick Start and CLI</h2></summary>
 
 <br/>
 
@@ -322,16 +688,21 @@ position_size  = min(shares, max_position_cap)
 git clone https://github.com/pruthvig1998/nexus.git
 cd nexus
 pip install -e ".[dev]"
-cp .env.example .env  # add ALPACA_API_KEY, ALPACA_SECRET_KEY, ANTHROPIC_API_KEY
+cp .env.example .env  # add API keys (see Environment Variables below)
 ```
 
 ### Paper Trading
 
 ```bash
-# Start paper trading with live Rich dashboard
+# Start paper trading with live Rich dashboard (default broker: Alpaca)
 python -m nexus run --paper
 
-# Paper trade without dashboard (headless / CI mode)
+# Use a different broker
+python -m nexus run --paper --broker moomoo
+python -m nexus run --paper --broker ibkr
+python -m nexus run --paper --broker webull
+
+# Headless mode (CI / cron / server)
 python -m nexus run --paper --no-dashboard
 ```
 
@@ -358,17 +729,36 @@ python -m nexus trades --limit 20
 python -m nexus signals --limit 10
 ```
 
+### Discord
+
+```bash
+# Load and replay signals from Discord export
+python -m nexus load-discord --file signals_export.json --replay
+```
+
 <br/>
 
 ### CLI Reference
 
 | Command | Description |
 |:--|:--|
-| `nexus run [--paper] [--no-dashboard]` | Start live/paper trading loop |
+| `nexus run [--paper] [--broker NAME] [--no-dashboard]` | Start live/paper trading loop |
 | `nexus backtest -t TICKER [--years N] [-o FILE]` | Run historical backtest |
 | `nexus status` | Print open positions + daily P&L |
 | `nexus trades [--limit N]` | Show recent closed trades |
 | `nexus signals [--limit N]` | Show recent signals |
+| `nexus load-discord --file FILE [--replay]` | Load signals from Discord export |
+
+<br/>
+
+### Supported Brokers
+
+| Broker | Flag | Module | Status |
+|:--|:--|:--|:--:|
+| **Alpaca** | `--broker alpaca` (default) | `broker.py` | Production |
+| **Moomoo** | `--broker moomoo` | `broker_moomoo.py` | Production |
+| **IBKR** | `--broker ibkr` | `broker_ibkr.py` | Production |
+| **Webull** | `--broker webull` | `broker_webull.py` | Production |
 
 <br/>
 
@@ -380,7 +770,18 @@ ALPACA_API_KEY=your_alpaca_key
 ALPACA_SECRET_KEY=your_alpaca_secret
 ANTHROPIC_API_KEY=your_anthropic_key
 
-# Optional
+# Broker-specific (add as needed)
+MOOMOO_API_KEY=your_moomoo_key
+IBKR_HOST=127.0.0.1
+IBKR_PORT=7497
+WEBULL_EMAIL=your_email
+WEBULL_PASSWORD=your_password
+
+# Discord (optional)
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+DISCORD_BOT_TOKEN=your_bot_token
+
+# General
 NEXUS_MODE=paper               # paper | live
 NEXUS_TICKERS=AAPL,MSFT,NVDA   # comma-separated watchlist
 NEXUS_LOG_LEVEL=INFO            # DEBUG | INFO | WARNING
@@ -392,8 +793,12 @@ NEXUS_LOG_LEVEL=INFO            # DEBUG | INFO | WARNING
 
 ---
 
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!--                       CUSTOM BROKERS & EXTENSIONS                          -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+
 <details>
-<summary><h2>🔌 Custom Brokers & Extensions</h2></summary>
+<summary><h2>Custom Brokers and Extensions</h2></summary>
 
 <br/>
 
@@ -402,46 +807,34 @@ NEXUS uses a pluggable broker interface. To add a new broker, subclass `BaseBrok
 ```python
 from nexus.broker import BaseBroker, Position, Quote, AccountInfo, OrderResult
 
-class InteractiveBrokersBroker(BaseBroker):
-    """Custom broker implementation for Interactive Brokers."""
+class CustomBroker(BaseBroker):
+    """Custom broker implementation."""
 
-    name = "interactive_brokers"
+    name = "custom_broker"
 
     def connect(self) -> None:
-        """Establish connection to IB Gateway/TWS."""
-        self.ib = IB()
-        self.ib.connect("127.0.0.1", 7497, clientId=1)
+        """Establish connection to broker API."""
+        ...
 
     def get_account(self) -> dict:
         """Return account summary: equity, buying_power, cash."""
-        summary = self.ib.accountSummary()
-        return {
-            "equity": float(summary["NetLiquidation"]),
-            "buying_power": float(summary["BuyingPower"]),
-            "cash": float(summary["TotalCashValue"]),
-        }
+        ...
 
     def submit_order(
         self, symbol: str, qty: int, side: str, order_type: str = "market"
     ) -> str:
         """Submit order, return order ID."""
-        contract = Stock(symbol, "SMART", "USD")
-        order = MarketOrder(side.upper(), qty)
-        trade = self.ib.placeOrder(contract, order)
-        return str(trade.order.orderId)
+        ...
 
     def get_positions(self) -> list[dict]:
         """Return list of open positions."""
-        return [
-            {"symbol": p.contract.symbol, "qty": p.position, "avg_cost": p.avgCost}
-            for p in self.ib.positions()
-        ]
+        ...
 ```
 
 Register in `config.py`:
 
 ```python
-BROKER_CLASS = "nexus.brokers.ib.InteractiveBrokersBroker"
+BROKER_CLASS = "nexus.brokers.custom.CustomBroker"
 ```
 
 <br/>
@@ -476,8 +869,12 @@ class PairsStrategy(BaseStrategy):
 
 ---
 
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!--                          TESTING & CI                                      -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+
 <details>
-<summary><h2>🧪 Testing & CI</h2></summary>
+<summary><h2>Testing and CI</h2></summary>
 
 <br/>
 
@@ -525,42 +922,60 @@ jobs:
 
 ---
 
-## 🧑‍💻 About
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!--                              FOOTER                                        -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
 
 <div align="center">
-
-<a href="https://github.com/pruthvig1998">
-  <img height="180em" src="https://github-readme-stats.vercel.app/api?username=pruthvig1998&show_icons=true&theme=tokyonight&bg_color=1B2A4A&title_color=C5A55A&icon_color=4A6FA5&text_color=ffffff&border_color=4A6FA5&include_all_commits=true&count_private=true" alt="GitHub Stats" />
-</a>
-&nbsp;&nbsp;
-<a href="https://github.com/pruthvig1998">
-  <img height="180em" src="https://github-readme-stats.vercel.app/api/top-langs/?username=pruthvig1998&layout=compact&theme=tokyonight&bg_color=1B2A4A&title_color=C5A55A&text_color=ffffff&border_color=4A6FA5&langs_count=8" alt="Top Languages" />
-</a>
-
-<br/><br/>
-
-<a href="https://github.com/pruthvig1998">
-  <img src="https://github-readme-streak-stats.herokuapp.com/?user=pruthvig1998&theme=tokyonight&background=1B2A4A&ring=C5A55A&fire=C5A55A&currStreakLabel=C5A55A&sideLabels=ffffff&sideNums=4A6FA5&currStreakNum=4A6FA5&dates=888888&border=4A6FA5" alt="GitHub Streak" />
-</a>
-
-</div>
 
 <br/>
 
----
-
-<div align="center">
-
-### 📄 License
+### License
 
 MIT License — use freely, trade responsibly.
 
 <br/>
 
-*Built with discipline. Tested with data. Deployed with conviction.*
+---
 
 <br/>
 
-<img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=6,11,20&height=120&section=footer" width="100%" />
+<table>
+<tr>
+<td align="center">
+
+**Built with discipline. Tested with data. Deployed with conviction.**
+
+<br/>
+
+NEXUS v3 — Where systematic meets intelligent.
+
+<br/>
+
+*5 Strategies &middot; 4 Brokers &middot; 15-Year Validated &middot; Production Ready*
+
+</td>
+</tr>
+</table>
+
+<br/>
+
+<a href="https://github.com/pruthvig1998">
+  <img height="180em" src="https://github-readme-stats.vercel.app/api?username=pruthvig1998&show_icons=true&theme=tokyonight&bg_color=0F172A&title_color=C5A55A&icon_color=8B5CF6&text_color=F8FAFC&border_color=1E293B&include_all_commits=true&count_private=true" alt="GitHub Stats" />
+</a>
+&nbsp;&nbsp;
+<a href="https://github.com/pruthvig1998">
+  <img height="180em" src="https://github-readme-stats.vercel.app/api/top-langs/?username=pruthvig1998&layout=compact&theme=tokyonight&bg_color=0F172A&title_color=C5A55A&text_color=F8FAFC&border_color=1E293B&langs_count=8" alt="Top Languages" />
+</a>
+
+<br/><br/>
+
+<a href="https://github.com/pruthvig1998">
+  <img src="https://github-readme-streak-stats.herokuapp.com/?user=pruthvig1998&theme=tokyonight&background=0F172A&ring=C5A55A&fire=F59E0B&currStreakLabel=C5A55A&sideLabels=F8FAFC&sideNums=8B5CF6&currStreakNum=8B5CF6&dates=4A6FA5&border=1E293B" alt="GitHub Streak" />
+</a>
+
+<br/><br/>
+
+<img src="https://capsule-render.vercel.app/api?type=waving&color=0:0F172A,50:1E293B,100:0F172A&height=120&section=footer" width="100%" />
 
 </div>
