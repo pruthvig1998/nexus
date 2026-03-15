@@ -86,10 +86,10 @@ class RiskLimits:
                                 loss_pct=f"{loss_pct:.1%}",
                                 threshold=f"{self._cfg.daily_loss_halt_pct:.1%}")
 
-            # Portfolio drawdown circuit breaker: halt if > 15% off peak
+            # Portfolio drawdown circuit breaker: halt if > 12% off peak
             if self._peak_equity > 0:
                 drawdown = 1.0 - (portfolio_value / self._peak_equity)
-                if drawdown > 0.15 and not self._halted:
+                if drawdown > 0.12 and not self._halted:
                     self._halted = True
                     log.warning("Portfolio drawdown halt triggered",
                                 drawdown=f"{drawdown:.1%}", peak=f"${self._peak_equity:,.0f}")

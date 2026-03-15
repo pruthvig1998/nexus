@@ -38,7 +38,7 @@ class RiskConfig:
     max_position_pct: float = 0.05
     max_portfolio_exposure: float = 0.90
     max_short_exposure_pct: float = 0.50    # short book capped at 50% of portfolio
-    daily_loss_halt_pct: float = 0.03
+    daily_loss_halt_pct: float = 0.02
     max_open_positions: int = 20
     kelly_fraction: float = 0.25
     atr_stop_multiplier: float = 1.5

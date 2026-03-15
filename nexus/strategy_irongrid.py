@@ -258,12 +258,9 @@ class IronGridStrategy:
             volumes = df["volume"]
             last_price = float(closes.iloc[-1])
 
-            # ── Gate 1: VIX filter ──────────────────────────────────────────
+            # ── Gate 1: VIX awareness (informational, not blocking) ────────
             vix = await get_vix()
-            if vix > self._VIX_CEILING:
-                log.debug("IronGrid VIX gate blocked", ticker=ticker,
-                          vix=f"{vix:.1f}", ceiling=self._VIX_CEILING)
-                return None  # options too expensive, skip all BUY signals
+            vix_caution = vix > self._VIX_CEILING  # used to reduce score, not block
 
             # ── Gate 2: First-30-min rule (live mode only) ──────────────────
             if not self._paper and self._FIRST_30_MIN_SKIP:
@@ -369,6 +366,14 @@ class IronGridStrategy:
 
             # ── Pick highest-scoring signal ─────────────────────────────────
             best = max(candidates, key=lambda s: s.score)
+
+            # ── VIX caution: reduce score when volatility is elevated ──────
+            if vix_caution:
+                penalty = min((vix - self._VIX_CEILING) * 0.02, 0.15)  # 2% per VIX point over ceiling, max 15%
+                best.score = round(max(best.score - penalty, 0.50), 4)
+                best.risks.append(f"elevated_vix: {vix:.1f} (score reduced by {penalty:.2f})")
+                log.debug("VIX caution applied", ticker=ticker, vix=f"{vix:.1f}",
+                          penalty=f"{penalty:.2f}", adjusted_score=f"{best.score:.2f}")
 
             # ── Optional PEG boost ──────────────────────────────────────────
             peg = await asyncio.to_thread(_get_peg_ratio, ticker)
