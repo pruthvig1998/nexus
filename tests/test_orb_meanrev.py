@@ -3,12 +3,10 @@ from __future__ import annotations
 
 import asyncio
 
-import numpy as np
 import pandas as pd
 import pytest
 
 from nexus.strategy import MeanReversionStrategy, ORBStrategy
-
 
 # ── Shared async runner ───────────────────────────────────────────────────────
 
@@ -312,23 +310,27 @@ class TestMeanReversionStrategy:
 
 class TestCandlePatterns:
     """Unit-test the private candlestick helpers directly."""
-    from nexus.strategy import _is_hammer, _is_shooting_star  # noqa: PLC0415
-    from nexus.strategy import _is_bullish_engulfing, _is_bearish_engulfing  # noqa: PLC0415
+    from nexus.strategy import (  # noqa: PLC0415  # noqa: PLC0415
+        _is_bearish_engulfing,
+        _is_bullish_engulfing,
+        _is_hammer,
+        _is_shooting_star,
+    )
 
     def test_hammer_detected(self):
         from nexus.strategy import _is_hammer
         # Long lower wick, small body, close near high
-        assert _is_hammer(o=100.5, h=101.0, l=98.0, c=100.8)
+        assert _is_hammer(o=100.5, h=101.0, low=98.0, c=100.8)
 
     def test_hammer_rejected_no_long_wick(self):
         from nexus.strategy import _is_hammer
         # Normal candle — no long lower wick
-        assert not _is_hammer(o=100.0, h=101.5, l=99.5, c=101.0)
+        assert not _is_hammer(o=100.0, h=101.5, low=99.5, c=101.0)
 
     def test_shooting_star_detected(self):
         from nexus.strategy import _is_shooting_star
         # Long upper wick, close near low
-        assert _is_shooting_star(o=100.5, h=103.0, l=100.0, c=100.2)
+        assert _is_shooting_star(o=100.5, h=103.0, low=100.0, c=100.2)
 
     def test_bullish_engulfing_detected(self):
         from nexus.strategy import _is_bullish_engulfing

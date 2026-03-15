@@ -38,8 +38,14 @@ import asyncio
 from typing import Dict, List, Optional
 
 from nexus.broker import (
-    AccountInfo, BaseBroker, OrderResult, OrderSide, OrderStatus,
-    OrderType, Position, Quote,
+    AccountInfo,
+    BaseBroker,
+    OrderResult,
+    OrderSide,
+    OrderStatus,
+    OrderType,
+    Position,
+    Quote,
 )
 from nexus.logger import get_logger
 
@@ -120,7 +126,8 @@ class IBKRBroker(BaseBroker):
         try:
             # ib_insync doesn't have a direct market-hours call; use reqCurrentTime
             # and compare to NYSE hours (9:30–16:00 ET Mon–Fri)
-            import datetime, zoneinfo
+            import datetime
+            import zoneinfo
             et = zoneinfo.ZoneInfo("America/New_York")
             now = datetime.datetime.now(tz=et)
             if now.weekday() >= 5:          # Sat/Sun

@@ -39,8 +39,14 @@ import os
 from typing import Dict, List, Optional
 
 from nexus.broker import (
-    AccountInfo, BaseBroker, OrderResult, OrderSide, OrderStatus,
-    OrderType, Position, Quote,
+    AccountInfo,
+    BaseBroker,
+    OrderResult,
+    OrderSide,
+    OrderStatus,
+    OrderType,
+    Position,
+    Quote,
 )
 from nexus.logger import get_logger
 
@@ -90,7 +96,7 @@ class WebullBroker(BaseBroker):
 
     async def connect(self) -> bool:
         try:
-            from webull import webull, paper_webull
+            from webull import paper_webull, webull
             self._wb = paper_webull() if self.paper else webull()
 
             # Restore device_id to skip 2FA on repeated connects

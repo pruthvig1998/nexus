@@ -14,6 +14,7 @@ v3.1 fixes (from quant audit):
 """
 from __future__ import annotations
 
+import asyncio
 import math
 import os
 import random
@@ -21,13 +22,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
-import asyncio
 import numpy as np
 import pandas as pd
 
 from nexus.config import NEXUSConfig, RiskConfig, StrategyConfig, get_config
-from nexus.strategy import compute_signal
 from nexus.logger import get_logger
+from nexus.strategy import compute_signal
 
 log = get_logger("backtest")
 
@@ -393,7 +393,6 @@ async def run_backtest(
 
     results: List[TickerResult] = []
     # Aggregate equity for true portfolio Sharpe
-    portfolio_equity: Optional[pd.Series] = None
 
     for ticker, df in price_data.items():
         result = await asyncio.to_thread(

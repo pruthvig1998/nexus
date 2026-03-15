@@ -29,12 +29,17 @@ This adapter handles the conversion automatically (ticker → "US.TICKER").
 """
 from __future__ import annotations
 
-import asyncio
 from typing import Dict, List, Optional
 
 from nexus.broker import (
-    AccountInfo, BaseBroker, OrderResult, OrderSide, OrderStatus,
-    OrderType, Position, Quote,
+    AccountInfo,
+    BaseBroker,
+    OrderResult,
+    OrderSide,
+    OrderStatus,
+    OrderType,
+    Position,
+    Quote,
 )
 from nexus.logger import get_logger
 
@@ -92,7 +97,7 @@ class MoomooBroker(BaseBroker):
     async def connect(self) -> bool:
         try:
             import moomoo as ft
-            env = ft.TrdEnv.SIMULATE if self.trade_env == MoomooTrdEnv.SIMULATE else ft.TrdEnv.REAL
+            _env = ft.TrdEnv.SIMULATE if self.trade_env == MoomooTrdEnv.SIMULATE else ft.TrdEnv.REAL  # noqa: F841
 
             self._quote_ctx = ft.OpenQuoteContext(host=self.host, port=self.port)
             self._trade_ctx = ft.OpenSecTradeContext(

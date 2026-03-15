@@ -1,7 +1,6 @@
 """Unit tests for signal generation — verifies both BUY and SELL signals."""
 import numpy as np
 import pandas as pd
-import pytest
 
 from nexus.config import RiskConfig, StrategyConfig
 from nexus.strategy import compute_signal

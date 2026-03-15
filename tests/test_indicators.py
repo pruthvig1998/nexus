@@ -1,7 +1,6 @@
 """Unit tests for technical indicators."""
 import numpy as np
 import pandas as pd
-import pytest
 
 from nexus.indicators import atr, bollinger_bands, macd, rsi, volume_ratio
 

@@ -24,9 +24,16 @@ import pandas as pd
 
 from nexus.config import RiskConfig, StrategyConfig, get_config
 from nexus.indicators import (
-    ATRResult, BollingerResult, MACDResult, RSIResult,
-    adr, atr, bollinger_bands, dynamic_limit_price, golden_cross,
-    macd, rsi, rsi_series, sma, volume_ratio,
+    adr,
+    atr,
+    bollinger_bands,
+    dynamic_limit_price,
+    golden_cross,
+    macd,
+    rsi,
+    rsi_series,
+    sma,
+    volume_ratio,
 )
 from nexus.logger import get_logger
 
@@ -261,31 +268,31 @@ def _adr_compression(highs: pd.Series, lows: pd.Series,
     return yesterday_range / adr_val <= threshold
 
 
-def _is_hammer(o: float, h: float, l: float, c: float) -> bool:
+def _is_hammer(o: float, h: float, low: float, c: float) -> bool:
     """Bullish hammer: long lower wick ≥ 2× body, close in top 60% of range,
     minimal upper wick. Signals buyer absorption at lows."""
-    total_range = h - l
+    total_range = h - low
     if total_range < 1e-6:
         return False
     body = abs(c - o)
-    lower_wick = min(o, c) - l
+    lower_wick = min(o, c) - low
     upper_wick = h - max(o, c)
-    close_pct = (c - l) / total_range          # 1.0 = at high
+    close_pct = (c - low) / total_range          # 1.0 = at high
     return (lower_wick >= 2.0 * max(body, 1e-6)
             and close_pct >= 0.60
             and upper_wick <= max(body, 1e-6))
 
 
-def _is_shooting_star(o: float, h: float, l: float, c: float) -> bool:
+def _is_shooting_star(o: float, h: float, low: float, c: float) -> bool:
     """Bearish shooting star: long upper wick ≥ 2× body, close in bottom 40%
     of range. Mirror of hammer — signals seller rejection at highs."""
-    total_range = h - l
+    total_range = h - low
     if total_range < 1e-6:
         return False
     body = abs(c - o)
     upper_wick = h - max(o, c)
-    lower_wick = min(o, c) - l
-    close_pct = (c - l) / total_range
+    lower_wick = min(o, c) - low
+    close_pct = (c - low) / total_range
     return (upper_wick >= 2.0 * max(body, 1e-6)
             and close_pct <= 0.40
             and lower_wick <= max(body, 1e-6))
@@ -428,7 +435,7 @@ class MeanReversionStrategy:
 
             # ── Gate 3: Trend bias via 200-day SMA ────────────────────────────
             sma200 = sma(closes, period=min(200, len(closes) - 1))
-            above_200 = sma200 is not None and last_price > sma200
+            _above_200 = sma200 is not None and last_price > sma200  # noqa: F841
 
             # ── Gate 4: RSI divergence (optional enhancer) ────────────────────
             divergence = _rsi_divergence(closes, rsi_vals, lookback=14)
@@ -471,9 +478,12 @@ class MeanReversionStrategy:
                     target_label = f"mid BB ({bb_result.middle:.2f})"
 
                 signals_hit = []
-                if hammer:      signals_hit.append("hammer")
-                if bull_eng:    signals_hit.append("bull-engulf")
-                if divergence == "bullish": signals_hit.append("RSI-div")
+                if hammer:
+                    signals_hit.append("hammer")
+                if bull_eng:
+                    signals_hit.append("bull-engulf")
+                if divergence == "bullish":
+                    signals_hit.append("RSI-div")
 
                 reasoning = (
                     f"MeanRev LONG: RSI={rsi_result.value:.1f}, z={z:.2f}, "
@@ -521,9 +531,12 @@ class MeanReversionStrategy:
                     target_label = f"mid BB ({bb_result.middle:.2f})"
 
                 signals_hit = []
-                if star:     signals_hit.append("shooting-star")
-                if bear_eng: signals_hit.append("bear-engulf")
-                if divergence == "bearish": signals_hit.append("RSI-div")
+                if star:
+                    signals_hit.append("shooting-star")
+                if bear_eng:
+                    signals_hit.append("bear-engulf")
+                if divergence == "bearish":
+                    signals_hit.append("RSI-div")
 
                 reasoning = (
                     f"MeanRev SHORT: RSI={rsi_result.value:.1f}, z={z:.2f}, "
@@ -660,7 +673,6 @@ class ORBStrategy:
                     and above_sma):
 
                 stop_px   = orl                                   # opposite range boundary
-                risk      = last_close - stop_px
                 target_px = last_close + self._TARGET_MULT * range_width
 
                 vol_bonus = min((vol_r - self._VOL_THRESHOLD) * 0.04, 0.08)
@@ -689,7 +701,6 @@ class ORBStrategy:
                     and below_sma):
 
                 stop_px   = orh
-                risk      = stop_px - last_close
                 target_px = last_close - self._TARGET_MULT * range_width
 
                 vol_bonus = min((vol_r - self._VOL_THRESHOLD) * 0.04, 0.08)

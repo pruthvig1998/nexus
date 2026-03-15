@@ -24,7 +24,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 from nexus.config import DiscordConfig
 from nexus.logger import get_logger
@@ -186,12 +186,12 @@ def _parse_message(
     # the whole thing for keyword matching (but keep original for ticker regex).
     alpha_chars = [c for c in stripped if c.isalpha()]
     if alpha_chars and sum(1 for c in alpha_chars if c.isupper()) / len(alpha_chars) > 0.80:
-        search_text = stripped.lower()
+        _search_text = stripped.lower()  # noqa: F841
         # Re-uppercase potential tickers that were $-prefixed in original
-        normalized = True
+        _normalized = True  # noqa: F841
     else:
-        search_text = content
-        normalized = False
+        # content used as-is (no normalization needed)
+        pass
 
     results: List[Signal] = []
     seen: set[str] = set()

@@ -1,5 +1,4 @@
 """Unit tests for position sizing and risk limit checks."""
-import pytest
 
 from nexus.broker import Position
 from nexus.config import RiskConfig

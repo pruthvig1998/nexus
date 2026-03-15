@@ -286,7 +286,7 @@ class IronGridStrategy:
             # ── Gate 4: Trend alignment via 50 SMA ─────────────────────────
             sma50 = sma(closes, period=50)
             trend_bullish = sma50 is not None and last_price > sma50
-            trend_bearish = sma50 is not None and last_price < sma50
+            _trend_bearish = sma50 is not None and last_price < sma50  # noqa: F841
 
             # ── Compute shared indicators ───────────────────────────────────
             atr_result = atr(highs, lows, closes, period=self._s.atr_period,

@@ -19,13 +19,23 @@ from typing import Any, Callable, Dict, List, Optional
 
 import pandas as pd
 
-from nexus.broker import AlpacaBroker, BaseBroker, OrderSide, OrderStatus, OrderType, Position, Quote
+from nexus.broker import (
+    AlpacaBroker,
+    BaseBroker,
+    OrderSide,
+    OrderStatus,
+    OrderType,
+    Position,
+)
 from nexus.config import NEXUSConfig, get_config
 from nexus.logger import get_logger
 from nexus.risk import RiskLimits, size_position
 from nexus.strategy import (
-    AIFundamentalStrategy, MeanReversionStrategy, MomentumStrategy,
-    ORBStrategy, Signal,
+    AIFundamentalStrategy,
+    MeanReversionStrategy,
+    MomentumStrategy,
+    ORBStrategy,
+    Signal,
 )
 from nexus.strategy_irongrid import IronGridStrategy
 from nexus.strategy_news import NewsSentimentStrategy
@@ -507,14 +517,17 @@ class NEXUSEngine:
                 hit_stop = stop > 0 and price <= stop
                 hit_target = target > 0 and price >= target
                 exit_order_side = OrderSide.SELL
-                exit_price_adj = lambda p: p * 0.999  # slightly below for limit
+                def exit_price_adj(p: float) -> float:
+                    return p * 0.999  # slightly below for limit
             else:  # SHORT
                 # Stop: price rose above stop (loss)
                 hit_stop = stop > 0 and price >= stop
                 # Target: price fell below target (profit)
                 hit_target = target > 0 and price <= target
                 exit_order_side = OrderSide.BUY  # buy to cover
-                exit_price_adj = lambda p: p * 1.001  # slightly above for limit
+
+                def exit_price_adj(p: float) -> float:
+                    return p * 1.001  # slightly above for limit
 
             if hit_stop or hit_target:
                 reason = "target_hit" if hit_target else "stop_hit"

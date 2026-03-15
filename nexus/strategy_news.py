@@ -447,9 +447,9 @@ class NewsSentimentStrategy:
             tr_vals = []
             for i in range(-period, 0):
                 h = float(highs.iloc[i])
-                l = float(lows.iloc[i])
-                prev_c = float(closes.iloc[i - 1]) if i - 1 >= -len(closes) else l
-                tr_vals.append(max(h - l, abs(h - prev_c), abs(l - prev_c)))
+                low = float(lows.iloc[i])
+                prev_c = float(closes.iloc[i - 1]) if i - 1 >= -len(closes) else low
+                tr_vals.append(max(h - low, abs(h - prev_c), abs(low - prev_c)))
             atr_val = sum(tr_vals) / len(tr_vals) if tr_vals else entry_price * 0.02
 
             if direction == "BUY":

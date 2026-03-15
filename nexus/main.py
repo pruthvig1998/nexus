@@ -130,8 +130,8 @@ def run(paper, broker_name, tickers, no_dashboard, scan_interval, log_level, use
     click.echo(f"Scan interval: {scan_interval}s  |  Press Ctrl+C to stop\n")
 
     async def _run():
-        from nexus.engine import NEXUSEngine
         from nexus.dashboard import NEXUSDashboard
+        from nexus.engine import NEXUSEngine
 
         engine = NEXUSEngine(config=cfg, broker=broker)
 

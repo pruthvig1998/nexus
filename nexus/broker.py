@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import asyncio
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Dict, List, Optional
 
@@ -341,7 +341,8 @@ class AlpacaBroker(BaseBroker):
             return OrderResult("", ticker, side, qty, 0, 0,
                                OrderStatus.REJECTED, self.name, "Not connected")
         try:
-            from alpaca.trading.enums import OrderSide as ASide, TimeInForce
+            from alpaca.trading.enums import OrderSide as ASide
+            from alpaca.trading.enums import TimeInForce
             from alpaca.trading.requests import LimitOrderRequest, MarketOrderRequest
 
             alpaca_side = ASide.BUY if side == OrderSide.BUY else ASide.SELL

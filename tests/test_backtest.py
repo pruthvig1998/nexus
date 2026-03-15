@@ -1,11 +1,10 @@
 """Smoke tests for the backtest engine — verifies long AND short trades appear."""
-import asyncio
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from nexus.backtest import BacktestSummary, _simulate, run_backtest
+from nexus.backtest import BacktestSummary, _simulate
 from nexus.config import NEXUSConfig, RiskConfig, StrategyConfig
 
 
@@ -93,7 +92,7 @@ async def test_run_backtest_returns_summary():
             )
 
             # Run with patched asyncio.to_thread that returns df
-            cfg = NEXUSConfig()
+            NEXUSConfig()  # verify config loads without error
             # Just test the structure of what run_backtest returns
             # without actually downloading data
             summary = BacktestSummary(

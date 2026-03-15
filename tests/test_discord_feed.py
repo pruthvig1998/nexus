@@ -9,7 +9,6 @@ import pytest
 
 from nexus.discord_feed import _parse_message
 
-
 # ── Parametrized BUY keyword detection ───────────────────────────────────────
 
 @pytest.mark.parametrize("keyword", [

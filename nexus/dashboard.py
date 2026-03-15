@@ -11,12 +11,10 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 from rich import box
 from rich.align import Align
-from rich.bar import Bar
-from rich.columns import Columns
 from rich.console import Console, Group
 from rich.layout import Layout
 from rich.live import Live
