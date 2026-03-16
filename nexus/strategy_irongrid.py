@@ -56,7 +56,7 @@ async def get_vix() -> float:
         else:
             # Fallback: try fast_info
             info = await asyncio.to_thread(lambda: ticker.fast_info)
-            vix_val = float(info.get("lastPrice", 20.0))
+            vix_val = float(getattr(info, "last_price", 20.0))
     except Exception as e:
         log.warning("VIX fetch failed, using default 20.0", error=str(e))
         vix_val = 20.0
@@ -102,8 +102,8 @@ def _detect_cup_and_handle(df: pd.DataFrame) -> Optional[dict]:
 
         window = closes.iloc[-(lookback + 5):]
         cup_start_price = float(window.iloc[0])
-        cup_trough_idx = int(window.iloc[:lookback].idxmin())
-        cup_trough_price = float(window.loc[cup_trough_idx])
+        trough_pos = int(window.iloc[:lookback].argmin())
+        cup_trough_price = float(window.iloc[trough_pos])
 
         # Cup depth: must drop > 10%
         drop_pct = (cup_start_price - cup_trough_price) / cup_start_price
@@ -111,7 +111,6 @@ def _detect_cup_and_handle(df: pd.DataFrame) -> Optional[dict]:
             continue
 
         # Recovery: after the trough, price must recover to within 3% of cup start
-        trough_pos = window.index.get_loc(cup_trough_idx)
         recovery_segment = window.iloc[trough_pos:]
         if len(recovery_segment) < 5:
             continue
@@ -122,8 +121,8 @@ def _detect_cup_and_handle(df: pd.DataFrame) -> Optional[dict]:
             continue  # didn't recover close enough to the rim
 
         # Handle: after the recovery high, look for a 3-7% pullback
-        recovery_high_pos = int(recovery_segment.idxmax())
-        rh_loc = window.index.get_loc(recovery_high_pos)
+        rh_rel = int(recovery_segment.argmax())
+        rh_loc = trough_pos + rh_rel
         handle_segment = window.iloc[rh_loc:]
         if len(handle_segment) < 2:
             continue

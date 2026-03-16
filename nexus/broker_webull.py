@@ -130,12 +130,11 @@ class WebullBroker(BaseBroker):
             # Store device_id for future logins (prevents 2FA repeat)
             if hasattr(self._wb, "device_id") and self._wb.device_id:
                 self.device_id = self._wb.device_id
-                log.info("Webull device_id stored — add to .env to skip 2FA",
-                         device_id=self.device_id)
+                log.info("Webull device_id stored — add to .env to skip 2FA")
 
             self._connected = True
             mode = "paper" if self.paper else "live"
-            log.info("Webull connected", mode=mode, email=self.email)
+            log.info("Webull connected", mode=mode)
             return True
 
         except ImportError:

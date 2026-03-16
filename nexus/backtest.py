@@ -261,7 +261,7 @@ def _simulate(ticker: str, df: pd.DataFrame,
                             "stop": sig.stop_price,
                             "target": sig.target_price,
                             "peak_high": sig.entry_price,
-                            "trail_pct": getattr(strategy_cfg, "trail_stop_pct", 0.0),
+                            "trail_pct": getattr(strategy_cfg, "trailing_stop_pct", 0.0),
                         }
                         long_entry_bar = i
 
@@ -276,7 +276,7 @@ def _simulate(ticker: str, df: pd.DataFrame,
                             "stop": sig.stop_price,
                             "target": sig.target_price,
                             "peak_low": sig.entry_price,
-                            "trail_pct": getattr(strategy_cfg, "trail_stop_pct", 0.0),
+                            "trail_pct": getattr(strategy_cfg, "trailing_stop_pct", 0.0),
                         }
                         short_entry_bar = i
 

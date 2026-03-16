@@ -420,6 +420,8 @@ class DiscordFeed:
         if message.id in self._seen_ids:
             self._dedup_skipped += 1
             return
+        if len(self._seen_ids) > 10000:
+            self._seen_ids.clear()
         self._seen_ids.add(message.id)
 
         # Channel filter

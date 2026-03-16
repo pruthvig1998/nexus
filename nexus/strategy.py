@@ -790,8 +790,10 @@ class AIFundamentalStrategy:
                 messages=[{"role": "user", "content": prompt}],
             )
             parsed = json.loads(response.content[0].text.strip())
-            ai_score = float(parsed.get("score", 0.5))
+            ai_score = max(0.0, min(float(parsed.get("score", 0.5)), 1.0))
             ai_dir = str(parsed.get("direction", "HOLD")).upper()
+            if ai_dir not in ("BUY", "SELL", "HOLD"):
+                ai_dir = "HOLD"
             ai_reason = str(parsed.get("reasoning", ""))
 
             stop_px = atr_r.stop_long if ai_dir == "BUY" else atr_r.stop_short

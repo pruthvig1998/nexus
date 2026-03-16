@@ -35,7 +35,8 @@ def size_position(portfolio_value: float, cash: float, entry_price: float,
                   stop_price: float, signal_score: float,
                   win_rate: float = 0.55, avg_win: float = 1.5,
                   avg_loss: float = 1.0, kelly_frac: float = 0.25,
-                  max_position_pct: float = 0.05) -> int:
+                  max_position_pct: float = 0.05,
+                  signal_direction: str = "BUY") -> int:
     risk_per_share = abs(entry_price - stop_price)
     if risk_per_share < 0.001 or entry_price <= 0:
         return 0
@@ -50,7 +51,9 @@ def size_position(portfolio_value: float, cash: float, entry_price: float,
     kelly_shares = int(portfolio_value * k * signal_score / entry_price)
 
     shares = min(atr_shares, kelly_shares) if kelly_shares > 0 else atr_shares
-    shares = min(shares, int(cash * 0.95 / entry_price))
+    # Only limit by cash for BUY signals; shorts use margin, not cash
+    if signal_direction == "BUY":
+        shares = min(shares, int(cash * 0.95 / entry_price))
     return max(shares, 0)
 
 

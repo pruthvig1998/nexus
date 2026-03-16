@@ -29,6 +29,7 @@ This adapter handles the conversion automatically (ticker → "US.TICKER").
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Dict, List, Optional
 
 from nexus.broker import (
@@ -97,8 +98,6 @@ class MoomooBroker(BaseBroker):
     async def connect(self) -> bool:
         try:
             import moomoo as ft
-            _env = ft.TrdEnv.SIMULATE if self.trade_env == MoomooTrdEnv.SIMULATE else ft.TrdEnv.REAL  # noqa: F841
-
             self._quote_ctx = ft.OpenQuoteContext(host=self.host, port=self.port)
             self._trade_ctx = ft.OpenSecTradeContext(
                 filter_trdmarket=ft.TrdMarket.US,
@@ -107,7 +106,7 @@ class MoomooBroker(BaseBroker):
                 security_firm=ft.SecurityFirm.FUTUSECURITIES,
             )
             # Verify connectivity with a ping-style call
-            ret, _ = self._quote_ctx.get_global_state()
+            ret, _ = await asyncio.to_thread(self._quote_ctx.get_global_state)
             if ret != ft.RET_OK:
                 raise ConnectionError("OpenD not reachable")
 
@@ -138,7 +137,7 @@ class MoomooBroker(BaseBroker):
     async def is_market_open(self) -> bool:
         try:
             import moomoo as ft
-            ret, data = self._quote_ctx.get_market_state(["US.AAPL"])
+            ret, data = await asyncio.to_thread(self._quote_ctx.get_market_state, ["US.AAPL"])
             if ret != ft.RET_OK or data.empty:
                 return True   # fallback: assume open
             state = data["market_state"].iloc[0]
@@ -155,7 +154,7 @@ class MoomooBroker(BaseBroker):
         try:
             import moomoo as ft
             code = _us(ticker)
-            ret, data = self._quote_ctx.get_stock_quote([code])
+            ret, data = await asyncio.to_thread(self._quote_ctx.get_stock_quote, [code])
             if ret != ft.RET_OK or data.empty:
                 return None
             row = data.iloc[0]
@@ -185,7 +184,7 @@ class MoomooBroker(BaseBroker):
         try:
             import moomoo as ft
             codes = [_us(t) for t in tickers]
-            ret, data = self._quote_ctx.get_stock_quote(codes)
+            ret, data = await asyncio.to_thread(self._quote_ctx.get_stock_quote, codes)
             if ret != ft.RET_OK or data.empty:
                 return {}
             result = {}
@@ -217,7 +216,7 @@ class MoomooBroker(BaseBroker):
         try:
             import moomoo as ft
             env = ft.TrdEnv.SIMULATE if self.trade_env == MoomooTrdEnv.SIMULATE else ft.TrdEnv.REAL
-            ret, data = self._trade_ctx.position_list_query(trd_env=env)
+            ret, data = await asyncio.to_thread(self._trade_ctx.position_list_query, trd_env=env)
             if ret != ft.RET_OK or data.empty:
                 return []
             result = []
@@ -254,7 +253,7 @@ class MoomooBroker(BaseBroker):
         try:
             import moomoo as ft
             env = ft.TrdEnv.SIMULATE if self.trade_env == MoomooTrdEnv.SIMULATE else ft.TrdEnv.REAL
-            ret, data = self._trade_ctx.accinfo_query(trd_env=env)
+            ret, data = await asyncio.to_thread(self._trade_ctx.accinfo_query, trd_env=env)
             if ret != ft.RET_OK or data.empty:
                 raise ValueError(f"accinfo_query failed: {data}")
             row = data.iloc[0]
@@ -299,7 +298,8 @@ class MoomooBroker(BaseBroker):
                 price    = round(limit_price or 0.0, 2)
                 ord_type = ft.OrderType.NORMAL   # LIMIT
 
-            ret, data = self._trade_ctx.place_order(
+            ret, data = await asyncio.to_thread(
+                self._trade_ctx.place_order,
                 price=price,
                 qty=int(qty),
                 code=code,
@@ -330,7 +330,8 @@ class MoomooBroker(BaseBroker):
         try:
             import moomoo as ft
             env = ft.TrdEnv.SIMULATE if self.trade_env == MoomooTrdEnv.SIMULATE else ft.TrdEnv.REAL
-            ret, data = self._trade_ctx.modify_order(
+            ret, data = await asyncio.to_thread(
+                self._trade_ctx.modify_order,
                 modify_order_op=ft.ModifyOrderOp.CANCEL,
                 order_id=order_id,
                 qty=0,
@@ -346,8 +347,9 @@ class MoomooBroker(BaseBroker):
         try:
             import moomoo as ft
             env = ft.TrdEnv.SIMULATE if self.trade_env == MoomooTrdEnv.SIMULATE else ft.TrdEnv.REAL
-            ret, data = self._trade_ctx.order_list_query(
-                order_id=order_id, trd_env=env
+            ret, data = await asyncio.to_thread(
+                self._trade_ctx.order_list_query,
+                order_id=order_id, trd_env=env,
             )
             if ret != ft.RET_OK or data.empty:
                 return OrderResult(order_id, "", OrderSide.BUY, 0, 0, 0,

@@ -192,7 +192,7 @@ class IBKRBroker(BaseBroker):
                     ticker=p.contract.symbol,
                     shares=abs(qty),
                     avg_cost=float(p.avgCost),
-                    current_price=float(p.avgCost),   # refreshed on quote fetch
+                    current_price=float(p.marketPrice) if hasattr(p, 'marketPrice') and p.marketPrice not in (None, float('nan'), 0) else (float(p.marketValue) / abs(p.position) if hasattr(p, 'marketValue') and p.marketValue and abs(qty) > 0 else float(p.avgCost)),
                     broker=self.name,
                     side=side,
                 ))
@@ -211,7 +211,7 @@ class IBKRBroker(BaseBroker):
             cash     = float(summary.get("TotalCashValue", 0))
             net_liq  = float(summary.get("NetLiquidation", 0))
             buy_pwr  = float(summary.get("BuyingPower", 0))
-            day_pnl  = float(summary.get("DayTradesRemaining", 0))  # proxy
+            day_pnl  = float(summary.get("RealizedPnL", 0))
             total_pnl = float(summary.get("UnrealizedPnL", 0))
             return AccountInfo(
                 broker=self.name,

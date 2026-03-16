@@ -236,8 +236,8 @@ class NEXUSEngine:
                 # Refresh local position cache
                 positions_list = await self._broker.get_positions()
                 self._positions = {p.ticker: p for p in positions_list}
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("Account refresh failed", error=str(e))
 
         tasks = [
             strategy.analyze(ticker, self._price_cache.get(ticker))
@@ -285,7 +285,7 @@ class NEXUSEngine:
         stale = [
             t for t in self._cfg.watchlist
             if t not in self._cache_ts or
-            (now - self._cache_ts[t]).seconds > 300
+            (now - self._cache_ts[t]).total_seconds() > 300
         ]
         for ticker in stale:
             await self._fetch_price(ticker, now)
@@ -328,6 +328,7 @@ class NEXUSEngine:
                 avg_loss=stats["avg_loss"],
                 kelly_frac=self._cfg.risk.kelly_fraction,
                 max_position_pct=self._cfg.risk.max_position_pct,
+                signal_direction=signal.direction,
             )
             if shares < 1:
                 return
