@@ -421,7 +421,9 @@ class DiscordFeed:
             self._dedup_skipped += 1
             return
         if len(self._seen_ids) > 10000:
-            self._seen_ids.clear()
+            # Evict oldest half instead of clearing entirely to preserve dedup state
+            to_keep = sorted(self._seen_ids)[-5000:]
+            self._seen_ids = set(to_keep)
         self._seen_ids.add(message.id)
 
         # Channel filter
@@ -520,8 +522,9 @@ class DiscordFeed:
                 '[{"ticker":"AAPL","direction":"BUY","confidence":0.85}]\n'
                 "Return ONLY the JSON array, no markdown, no explanation."
             )
+            from nexus.config import get_config
             resp = await client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model=get_config().ai_model,
                 max_tokens=256,
                 messages=[{"role": "user", "content": prompt}],
             )

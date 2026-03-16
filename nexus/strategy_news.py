@@ -248,6 +248,7 @@ class NewsSentimentStrategy:
 
         If multiple headlines match, the strongest signal wins.
         """
+        self._prune_expired()
         now = datetime.now(timezone.utc)
         cutoff = now - self._headline_expiry
 

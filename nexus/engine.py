@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from enum import Enum, auto
 from typing import Any, Callable, Dict, List, Optional
 
@@ -283,12 +283,17 @@ class NEXUSEngine:
     # ── Price cache ───────────────────────────────────────────────────────────
 
     async def _refresh_prices(self) -> None:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         stale = [
             t for t in self._cfg.watchlist
             if t not in self._cache_ts or
             (now - self._cache_ts[t]).total_seconds() > 300
         ]
+        # Evict tickers no longer on watchlist to prevent unbounded cache growth
+        stale_keys = [t for t in self._price_cache if t not in self._cfg.watchlist]
+        for t in stale_keys:
+            del self._price_cache[t]
+            self._cache_ts.pop(t, None)
         for ticker in stale:
             await self._fetch_price(ticker, now)
 
@@ -375,7 +380,7 @@ class NEXUSEngine:
                         signal.ticker, existing.shares,
                         signal.limit_price or signal.entry_price,
                     )
-                    del self._positions[signal.ticker]
+                    self._positions.pop(signal.ticker, None)
                     if close_result and close_result.order_id:
                         self._pending[close_result.order_id] = _PendingOrder(
                             order_id=close_result.order_id,
@@ -405,7 +410,7 @@ class NEXUSEngine:
                         ticker=signal.ticker, side=OrderSide.SELL, qty=existing.shares,
                         order_type=OrderType.MARKET,
                     )
-                    del self._positions[signal.ticker]
+                    self._positions.pop(signal.ticker, None)
                     if close_result and close_result.order_id:
                         self._pending[close_result.order_id] = _PendingOrder(
                             order_id=close_result.order_id,

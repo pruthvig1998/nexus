@@ -32,6 +32,7 @@ log = get_logger("strategy.events")
 # ── News cache (module-level, shared across instances) ────────────────────────
 
 _news_cache: Dict[str, tuple[list, float]] = {}  # {ticker: (news, timestamp)}
+_NEWS_CACHE_MAX_SIZE = 100  # evict oldest entries when cache exceeds this
 
 
 # ── High-impact keyword set ──────────────────────────────────────────────────
@@ -248,6 +249,10 @@ class EventCalendarStrategy:
                     if isinstance(item, dict):
                         normalized.append(item)
 
+            # Evict stale entries when cache grows too large
+            if len(_news_cache) > _NEWS_CACHE_MAX_SIZE:
+                oldest_key = min(_news_cache, key=lambda k: _news_cache[k][1])
+                del _news_cache[oldest_key]
             _news_cache[ticker] = (normalized, now)
             return normalized
         except Exception as e:

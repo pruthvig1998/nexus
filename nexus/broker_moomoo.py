@@ -93,6 +93,14 @@ class MoomooBroker(BaseBroker):
     def is_connected(self) -> bool:
         return self._connected and self._quote_ctx is not None and self._trade_ctx is not None
 
+    async def _ensure_connected(self) -> bool:
+        """Auto-reconnect if connection was lost."""
+        if self.is_connected:
+            return True
+        log.warning("Moomoo connection lost, attempting reconnect...")
+        self._connected = False
+        return await self.connect()
+
     # ── Lifecycle ──────────────────────────────────────────────────────────────
 
     async def connect(self) -> bool:
@@ -135,6 +143,8 @@ class MoomooBroker(BaseBroker):
     # ── Market hours ───────────────────────────────────────────────────────────
 
     async def is_market_open(self) -> bool:
+        if not await self._ensure_connected():
+            return True  # fallback: assume open
         try:
             import moomoo as ft
             ret, data = await asyncio.to_thread(self._quote_ctx.get_market_state, ["US.AAPL"])
@@ -149,7 +159,7 @@ class MoomooBroker(BaseBroker):
     # ── Quotes ─────────────────────────────────────────────────────────────────
 
     async def get_quote(self, ticker: str) -> Optional[Quote]:
-        if not self.is_connected:
+        if not await self._ensure_connected():
             return None
         try:
             import moomoo as ft
@@ -179,7 +189,7 @@ class MoomooBroker(BaseBroker):
             return None
 
     async def get_batch_quotes(self, tickers: List[str]) -> Dict[str, Quote]:
-        if not self.is_connected:
+        if not await self._ensure_connected():
             return {}
         try:
             import moomoo as ft
@@ -211,7 +221,7 @@ class MoomooBroker(BaseBroker):
     # ── Account & positions ────────────────────────────────────────────────────
 
     async def get_positions(self) -> List[Position]:
-        if not self.is_connected:
+        if not await self._ensure_connected():
             return []
         try:
             import moomoo as ft
@@ -250,6 +260,9 @@ class MoomooBroker(BaseBroker):
             return default
 
     async def get_account_info(self) -> AccountInfo:
+        if not await self._ensure_connected():
+            paper = self.trade_env == MoomooTrdEnv.SIMULATE
+            return AccountInfo(self.name, 0, 0, 0, 0, 0, paper)
         try:
             import moomoo as ft
             env = ft.TrdEnv.SIMULATE if self.trade_env == MoomooTrdEnv.SIMULATE else ft.TrdEnv.REAL
@@ -282,7 +295,7 @@ class MoomooBroker(BaseBroker):
         order_type: OrderType = OrderType.LIMIT,
         limit_price: Optional[float] = None,
     ) -> OrderResult:
-        if not self.is_connected:
+        if not await self._ensure_connected():
             return OrderResult("", ticker, side, qty, 0, 0,
                                OrderStatus.REJECTED, self.name, "Not connected")
         try:
@@ -327,6 +340,8 @@ class MoomooBroker(BaseBroker):
                                OrderStatus.REJECTED, self.name, str(e))
 
     async def cancel_order(self, order_id: str) -> bool:
+        if not await self._ensure_connected():
+            return False
         try:
             import moomoo as ft
             env = ft.TrdEnv.SIMULATE if self.trade_env == MoomooTrdEnv.SIMULATE else ft.TrdEnv.REAL
@@ -344,6 +359,9 @@ class MoomooBroker(BaseBroker):
             return False
 
     async def get_order_status(self, order_id: str) -> OrderResult:
+        if not await self._ensure_connected():
+            return OrderResult(order_id, "", OrderSide.BUY, 0, 0, 0,
+                               OrderStatus.CANCELLED, self.name)
         try:
             import moomoo as ft
             env = ft.TrdEnv.SIMULATE if self.trade_env == MoomooTrdEnv.SIMULATE else ft.TrdEnv.REAL

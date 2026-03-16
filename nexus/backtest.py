@@ -19,7 +19,7 @@ import math
 import os
 import random
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -67,7 +67,7 @@ class BacktestSummary:
     short_trades: int
     monte_carlo_sharpe_5pct: float = 0.0   # 5th percentile Monte Carlo Sharpe
     monte_carlo_sharpe_95pct: float = 0.0  # 95th percentile
-    generated_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    generated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
 # ── Metric helpers ────────────────────────────────────────────────────────────

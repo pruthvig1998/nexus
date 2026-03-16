@@ -11,7 +11,7 @@ from __future__ import annotations
 import sqlite3
 import uuid
 from contextlib import contextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import List, Optional, Tuple
 
 from nexus.logger import get_logger
@@ -53,6 +53,7 @@ class PortfolioTracker:
     @contextmanager
     def _conn(self):
         conn = sqlite3.connect(self._db_path, check_same_thread=False)
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.row_factory = sqlite3.Row
         try:
             yield conn
@@ -78,7 +79,7 @@ class PortfolioTracker:
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (trade_id, broker, ticker, side, shares, entry_price,
                  stop_price, target_price, strategy, signal_score,
-                 datetime.utcnow().isoformat(), int(paper)),
+                 datetime.now(timezone.utc).isoformat(), int(paper)),
             )
         log.info("Trade opened", id=trade_id[:8], ticker=ticker, side=side,
                  shares=shares, price=f"${entry_price:.2f}")
@@ -100,7 +101,7 @@ class PortfolioTracker:
                 pnl = (exit_price - trade["entry_price"]) * trade["shares"]
             conn.execute(
                 "UPDATE trades SET exit_price=?,pnl=?,exit_reason=?,closed_at=? WHERE id=?",
-                (exit_price, pnl, exit_reason, datetime.utcnow().isoformat(), trade_id),
+                (exit_price, pnl, exit_reason, datetime.now(timezone.utc).isoformat(), trade_id),
             )
             today = date.today().isoformat()
             conn.execute(
@@ -152,7 +153,7 @@ class PortfolioTracker:
                 "INSERT INTO signals (id,ticker,strategy,score,direction,reasoning,ts) "
                 "VALUES (?,?,?,?,?,?,?)",
                 (str(uuid.uuid4()), ticker, strategy, score, direction,
-                 reasoning, datetime.utcnow().isoformat()),
+                 reasoning, datetime.now(timezone.utc).isoformat()),
             )
 
     def get_recent_signals(self, limit: int = 50) -> List[dict]:
