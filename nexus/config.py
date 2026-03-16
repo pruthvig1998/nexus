@@ -82,6 +82,10 @@ class StrategyConfig:
     stop_loss_pct: float = 0.25          # 25% stop loss on options
     trailing_stop_pct: float = 0.12      # 12% trail once up 20%+
 
+    # Event Calendar strategy
+    event_news_cache_ttl: int = 1800     # 30 min cache for news headlines
+    event_max_claude_calls: int = 5      # max Claude calls per scan cycle
+
 
 @dataclass
 class NEXUSConfig:

@@ -37,6 +37,7 @@ from nexus.strategy import (
     ORBStrategy,
     Signal,
 )
+from nexus.strategy_events import EventCalendarStrategy
 from nexus.strategy_irongrid import IronGridStrategy
 from nexus.strategy_news import NewsSentimentStrategy
 from nexus.tracker import PortfolioTracker
@@ -122,6 +123,7 @@ class NEXUSEngine:
             ORBStrategy(),
             IronGridStrategy(),
             NewsSentimentStrategy(),
+            EventCalendarStrategy(),
         ]
         if self._cfg.anthropic_api_key:
             self._strategies.append(AIFundamentalStrategy())
