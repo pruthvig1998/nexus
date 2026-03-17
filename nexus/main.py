@@ -227,7 +227,20 @@ def run(
 
         engine = NEXUSEngine(config=cfg, broker=broker, flatten_on_exit=flatten_on_exit)
 
-        tasks = [engine.start()]
+        tasks = []
+
+        # Web server goes first so it can bind the port before any
+        # potentially-blocking broker connection attempts.
+        if use_web:
+            from nexus.web import WebServer
+
+            web = WebServer(engine, port=web_port)
+            tasks.append(web.start())
+            click.echo(f"Web dashboard → http://localhost:{web_port}")
+        else:
+            web = None
+
+        tasks.append(engine.start())
         if not no_dashboard:
             dash = NEXUSDashboard(engine.tracker, paper=paper, event_bus=engine.event_bus)
             tasks.append(dash.run())
@@ -264,15 +277,6 @@ def run(
             click.echo("Telegram alerter enabled — sending trade notifications")
         else:
             alerter = None
-
-        if use_web:
-            from nexus.web import WebServer
-
-            web = WebServer(engine, port=web_port)
-            tasks.append(web.start())
-            click.echo(f"Web dashboard → http://localhost:{web_port}")
-        else:
-            web = None
 
         try:
             await asyncio.gather(*tasks)

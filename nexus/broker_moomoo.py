@@ -108,8 +108,12 @@ class MoomooBroker(BaseBroker):
         try:
             import moomoo as ft
 
-            self._quote_ctx = ft.OpenQuoteContext(host=self.host, port=self.port)
-            self._trade_ctx = ft.OpenSecTradeContext(
+            # Run blocking constructors in thread to avoid blocking event loop
+            self._quote_ctx = await asyncio.to_thread(
+                ft.OpenQuoteContext, host=self.host, port=self.port
+            )
+            self._trade_ctx = await asyncio.to_thread(
+                ft.OpenSecTradeContext,
                 filter_trdmarket=ft.TrdMarket.US,
                 host=self.host,
                 port=self.port,
