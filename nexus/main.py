@@ -133,6 +133,19 @@ def backtest(tickers, years, capital, output, log_level):
     "--telegram", "use_telegram", is_flag=True, default=False, help="Enable Telegram trade alerts"
 )
 @click.option(
+    "--web",
+    "use_web",
+    is_flag=True,
+    default=False,
+    help="Enable web dashboard at http://localhost:8080",
+)
+@click.option(
+    "--web-port",
+    default=8080,
+    show_default=True,
+    help="Port for the web dashboard",
+)
+@click.option(
     "--flatten-on-exit",
     is_flag=True,
     default=False,
@@ -148,6 +161,8 @@ def run(
     use_discord,
     use_twitter,
     use_telegram,
+    use_web,
+    web_port,
     flatten_on_exit,
 ):
     """Start the live long/short trading engine with Rich dashboard."""
@@ -250,6 +265,15 @@ def run(
         else:
             alerter = None
 
+        if use_web:
+            from nexus.web import WebServer
+
+            web = WebServer(engine, port=web_port)
+            tasks.append(web.start())
+            click.echo(f"Web dashboard → http://localhost:{web_port}")
+        else:
+            web = None
+
         try:
             await asyncio.gather(*tasks)
         except (KeyboardInterrupt, asyncio.CancelledError):
@@ -264,6 +288,8 @@ def run(
                 await twitter_feed.stop()
             if alerter:
                 await alerter.stop()
+            if web:
+                await web.stop()
 
     try:
         asyncio.run(_run())
