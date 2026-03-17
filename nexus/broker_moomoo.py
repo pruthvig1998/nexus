@@ -250,7 +250,7 @@ class MoomooBroker(BaseBroker):
                         ticker=ticker,
                         shares=abs(qty),
                         avg_cost=float(row.get("cost_price", 0) or 0),
-                        current_price=float(row.get("market_val", 0) or 0) / max(abs(qty), 1),
+                        current_price=abs(float(row.get("market_val", 0) or 0)) / max(abs(qty), 1),
                         broker=self.name,
                         side=side,
                     )
