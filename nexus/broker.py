@@ -14,6 +14,7 @@ v3 changes:
   - AlpacaBroker.open_short() / close_short() — sell short, cover short
   - get_positions() detects side from Alpaca qty sign
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -29,6 +30,7 @@ log = get_logger("broker")
 
 
 # ── Shared data types ─────────────────────────────────────────────────────────
+
 
 class OrderSide(str, Enum):
     BUY = "BUY"
@@ -71,18 +73,17 @@ class Quote:
 
     @property
     def change_pct(self) -> float:
-        return ((self.last - self.prev_close) / self.prev_close * 100
-                if self.prev_close else 0.0)
+        return (self.last - self.prev_close) / self.prev_close * 100 if self.prev_close else 0.0
 
 
 @dataclass
 class Position:
     ticker: str
-    shares: float          # always positive — direction expressed via side
+    shares: float  # always positive — direction expressed via side
     avg_cost: float
     current_price: float
     broker: str
-    side: str = "LONG"     # "LONG" | "SHORT"
+    side: str = "LONG"  # "LONG" | "SHORT"
 
     @property
     def market_value(self) -> float:
@@ -129,6 +130,7 @@ class AccountInfo:
 
 # ── Abstract base ─────────────────────────────────────────────────────────────
 
+
 class BaseBroker(ABC):
     name: str = "base"
     paper: bool = True
@@ -156,9 +158,14 @@ class BaseBroker(ABC):
     async def get_account_info(self) -> AccountInfo: ...
 
     @abstractmethod
-    async def place_order(self, ticker: str, side: OrderSide, qty: float,
-                          order_type: OrderType = OrderType.LIMIT,
-                          limit_price: Optional[float] = None) -> OrderResult: ...
+    async def place_order(
+        self,
+        ticker: str,
+        side: OrderSide,
+        qty: float,
+        order_type: OrderType = OrderType.LIMIT,
+        limit_price: Optional[float] = None,
+    ) -> OrderResult: ...
 
     @abstractmethod
     async def cancel_order(self, order_id: str) -> bool: ...
@@ -166,25 +173,36 @@ class BaseBroker(ABC):
     @abstractmethod
     async def get_order_status(self, order_id: str) -> OrderResult: ...
 
-    async def open_short(self, ticker: str, shares: float,
-                         limit_price: Optional[float] = None) -> OrderResult:
+    async def open_short(
+        self, ticker: str, shares: float, limit_price: Optional[float] = None
+    ) -> OrderResult:
         """Sell short (unowned stock). Default: delegates to place_order(SELL)."""
-        return await self.place_order(ticker, OrderSide.SELL, shares,
-                                      OrderType.LIMIT if limit_price else OrderType.MARKET,
-                                      limit_price)
+        return await self.place_order(
+            ticker,
+            OrderSide.SELL,
+            shares,
+            OrderType.LIMIT if limit_price else OrderType.MARKET,
+            limit_price,
+        )
 
-    async def close_short(self, ticker: str, shares: float,
-                          limit_price: Optional[float] = None) -> OrderResult:
+    async def close_short(
+        self, ticker: str, shares: float, limit_price: Optional[float] = None
+    ) -> OrderResult:
         """Buy to cover a short position."""
-        return await self.place_order(ticker, OrderSide.BUY, shares,
-                                      OrderType.LIMIT if limit_price else OrderType.MARKET,
-                                      limit_price)
+        return await self.place_order(
+            ticker,
+            OrderSide.BUY,
+            shares,
+            OrderType.LIMIT if limit_price else OrderType.MARKET,
+            limit_price,
+        )
 
     async def is_market_open(self) -> bool:
         return True
 
 
 # ── Alpaca ────────────────────────────────────────────────────────────────────
+
 
 async def _run(fn, *args, **kwargs):
     """Wrap synchronous alpaca-py calls for async execution."""
@@ -255,6 +273,7 @@ class AlpacaBroker(BaseBroker):
             return None
         try:
             from alpaca.data.requests import StockLatestQuoteRequest
+
             req = StockLatestQuoteRequest(symbol_or_symbols=[ticker])
             quotes = await _run(self._data_client.get_stock_latest_quote, req)
             q = quotes.get(ticker)
@@ -277,6 +296,7 @@ class AlpacaBroker(BaseBroker):
             return {}
         try:
             from alpaca.data.requests import StockLatestQuoteRequest
+
             req = StockLatestQuoteRequest(symbol_or_symbols=tickers)
             raw = await _run(self._data_client.get_stock_latest_quote, req)
             result = {}
@@ -305,14 +325,16 @@ class AlpacaBroker(BaseBroker):
                 qty = float(p.qty)
                 side = "SHORT" if qty < 0 else "LONG"
                 shares = abs(qty)
-                result.append(Position(
-                    ticker=p.symbol,
-                    shares=shares,
-                    avg_cost=float(p.avg_entry_price),
-                    current_price=float(p.current_price),
-                    broker=self.name,
-                    side=side,
-                ))
+                result.append(
+                    Position(
+                        ticker=p.symbol,
+                        shares=shares,
+                        avg_cost=float(p.avg_entry_price),
+                        current_price=float(p.current_price),
+                        broker=self.name,
+                        side=side,
+                    )
+                )
             return result
         except Exception as e:
             log.error("Alpaca get_positions failed", error=str(e))
@@ -334,12 +356,18 @@ class AlpacaBroker(BaseBroker):
             log.error("Alpaca account info failed", error=str(e))
             return AccountInfo(self.name, 0, 0, 0, 0, 0, self.paper)
 
-    async def place_order(self, ticker: str, side: OrderSide, qty: float,
-                          order_type: OrderType = OrderType.LIMIT,
-                          limit_price: Optional[float] = None) -> OrderResult:
+    async def place_order(
+        self,
+        ticker: str,
+        side: OrderSide,
+        qty: float,
+        order_type: OrderType = OrderType.LIMIT,
+        limit_price: Optional[float] = None,
+    ) -> OrderResult:
         if not self.is_connected:
-            return OrderResult("", ticker, side, qty, 0, 0,
-                               OrderStatus.REJECTED, self.name, "Not connected")
+            return OrderResult(
+                "", ticker, side, qty, 0, 0, OrderStatus.REJECTED, self.name, "Not connected"
+            )
         try:
             from alpaca.trading.enums import OrderSide as ASide
             from alpaca.trading.enums import TimeInForce
@@ -349,13 +377,17 @@ class AlpacaBroker(BaseBroker):
 
             if order_type == OrderType.LIMIT and limit_price:
                 req = LimitOrderRequest(
-                    symbol=ticker, qty=int(qty), side=alpaca_side,
+                    symbol=ticker,
+                    qty=int(qty),
+                    side=alpaca_side,
                     time_in_force=TimeInForce.DAY,
                     limit_price=round(limit_price, 2),
                 )
             else:
                 req = MarketOrderRequest(
-                    symbol=ticker, qty=int(qty), side=alpaca_side,
+                    symbol=ticker,
+                    qty=int(qty),
+                    side=alpaca_side,
                     time_in_force=TimeInForce.DAY,
                 )
 
@@ -379,30 +411,48 @@ class AlpacaBroker(BaseBroker):
             )
         except Exception as e:
             log.error("Alpaca place_order failed", ticker=ticker, error=str(e))
-            return OrderResult("", ticker, side, qty, 0, 0,
-                               OrderStatus.REJECTED, self.name, str(e))
+            return OrderResult("", ticker, side, qty, 0, 0, OrderStatus.REJECTED, self.name, str(e))
 
-    async def open_short(self, ticker: str, shares: float,
-                         limit_price: Optional[float] = None) -> OrderResult:
+    async def open_short(
+        self, ticker: str, shares: float, limit_price: Optional[float] = None
+    ) -> OrderResult:
         """Short sell: SELL unowned stock. Alpaca handles this automatically."""
-        log.info("Opening short", ticker=ticker, shares=shares,
-                 limit=f"${limit_price:.2f}" if limit_price else "market")
-        return await self.place_order(ticker, OrderSide.SELL, shares,
-                                      OrderType.LIMIT if limit_price else OrderType.MARKET,
-                                      limit_price)
+        log.info(
+            "Opening short",
+            ticker=ticker,
+            shares=shares,
+            limit=f"${limit_price:.2f}" if limit_price else "market",
+        )
+        return await self.place_order(
+            ticker,
+            OrderSide.SELL,
+            shares,
+            OrderType.LIMIT if limit_price else OrderType.MARKET,
+            limit_price,
+        )
 
-    async def close_short(self, ticker: str, shares: float,
-                          limit_price: Optional[float] = None) -> OrderResult:
+    async def close_short(
+        self, ticker: str, shares: float, limit_price: Optional[float] = None
+    ) -> OrderResult:
         """Buy to cover a short position."""
-        log.info("Covering short", ticker=ticker, shares=shares,
-                 limit=f"${limit_price:.2f}" if limit_price else "market")
-        return await self.place_order(ticker, OrderSide.BUY, shares,
-                                      OrderType.LIMIT if limit_price else OrderType.MARKET,
-                                      limit_price)
+        log.info(
+            "Covering short",
+            ticker=ticker,
+            shares=shares,
+            limit=f"${limit_price:.2f}" if limit_price else "market",
+        )
+        return await self.place_order(
+            ticker,
+            OrderSide.BUY,
+            shares,
+            OrderType.LIMIT if limit_price else OrderType.MARKET,
+            limit_price,
+        )
 
     async def cancel_order(self, order_id: str) -> bool:
         try:
             import uuid as _uuid
+
             await _run(self._client.cancel_order_by_id, _uuid.UUID(order_id))
             return True
         except Exception as e:
@@ -412,6 +462,7 @@ class AlpacaBroker(BaseBroker):
     async def get_order_status(self, order_id: str) -> OrderResult:
         try:
             import uuid as _uuid
+
             order = await _run(self._client.get_order_by_id, _uuid.UUID(order_id))
             _status_map = {
                 "new": OrderStatus.SUBMITTED,
@@ -432,5 +483,6 @@ class AlpacaBroker(BaseBroker):
             )
         except Exception as e:
             log.error("Alpaca get_order_status failed", error=str(e))
-            return OrderResult(order_id, "", OrderSide.BUY, 0, 0, 0,
-                               OrderStatus.REJECTED, self.name)
+            return OrderResult(
+                order_id, "", OrderSide.BUY, 0, 0, 0, OrderStatus.REJECTED, self.name
+            )

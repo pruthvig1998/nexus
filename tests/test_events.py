@@ -1,4 +1,5 @@
 """Tests for EventCalendarStrategy — significance filter, earnings check, signal generation."""
+
 from __future__ import annotations
 
 import asyncio
@@ -16,6 +17,7 @@ from nexus.strategy_events import (
 )
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
+
 
 @pytest.fixture(autouse=True)
 def _reset_config():
@@ -38,19 +40,23 @@ def _clear_news_cache():
 def _make_df(rows: int = 60) -> pd.DataFrame:
     """Create a minimal OHLCV DataFrame for testing."""
     import numpy as np
+
     np.random.seed(42)
     base = 100.0
     closes = base + np.cumsum(np.random.randn(rows) * 0.5)
-    return pd.DataFrame({
-        "open": closes - 0.3,
-        "high": closes + 0.5,
-        "low": closes - 0.5,
-        "close": closes,
-        "volume": [1_000_000] * rows,
-    })
+    return pd.DataFrame(
+        {
+            "open": closes - 0.3,
+            "high": closes + 0.5,
+            "low": closes - 0.5,
+            "close": closes,
+            "volume": [1_000_000] * rows,
+        }
+    )
 
 
 # ── _is_significant tests ────────────────────────────────────────────────────
+
 
 class TestIsSignificant:
     def test_earnings_keyword_detected(self):
@@ -134,28 +140,26 @@ class TestIsSignificant:
 
 # ── _check_earnings tests ────────────────────────────────────────────────────
 
+
 class TestCheckEarnings:
     def test_no_upcoming_earnings_returns_none(self):
         strategy = EventCalendarStrategy()
         with patch("nexus.strategy_events.asyncio.to_thread") as mock_thread:
             # Simulate yfinance returning None calendar
             mock_thread.return_value = None
-            result = asyncio.get_event_loop().run_until_complete(
-                strategy._check_earnings("AAPL")
-            )
+            result = asyncio.get_event_loop().run_until_complete(strategy._check_earnings("AAPL"))
             assert result is None
 
     def test_empty_calendar_returns_none(self):
         strategy = EventCalendarStrategy()
         with patch("nexus.strategy_events.asyncio.to_thread") as mock_thread:
             mock_thread.return_value = pd.DataFrame()
-            result = asyncio.get_event_loop().run_until_complete(
-                strategy._check_earnings("AAPL")
-            )
+            result = asyncio.get_event_loop().run_until_complete(strategy._check_earnings("AAPL"))
             assert result is None
 
 
 # ── Signal direction and score validation ────────────────────────────────────
+
 
 class TestSignalValidation:
     def test_analyze_returns_none_without_api_key(self):
@@ -169,24 +173,18 @@ class TestSignalValidation:
             __import__("time").time(),
         )
 
-        result = asyncio.get_event_loop().run_until_complete(
-            strategy.analyze("TEST", df)
-        )
+        result = asyncio.get_event_loop().run_until_complete(strategy.analyze("TEST", df))
         assert result is None  # no API key configured
 
     def test_analyze_returns_none_for_insufficient_data(self):
         strategy = EventCalendarStrategy()
         df = _make_df(5)
-        result = asyncio.get_event_loop().run_until_complete(
-            strategy.analyze("AAPL", df)
-        )
+        result = asyncio.get_event_loop().run_until_complete(strategy.analyze("AAPL", df))
         assert result is None
 
     def test_analyze_returns_none_for_none_df(self):
         strategy = EventCalendarStrategy()
-        result = asyncio.get_event_loop().run_until_complete(
-            strategy.analyze("AAPL", None)
-        )
+        result = asyncio.get_event_loop().run_until_complete(strategy.analyze("AAPL", None))
         assert result is None
 
     def test_research_returns_valid_buy_signal(self):
@@ -205,25 +203,37 @@ class TestSignalValidation:
         )
 
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text=json.dumps({
-            "direction": "BUY",
-            "score": 0.85,
-            "reasoning": "Strong earnings beat with raised guidance",
-            "event_type": "earnings",
-            "time_horizon": "swing",
-        }))]
+        mock_response.content = [
+            MagicMock(
+                text=json.dumps(
+                    {
+                        "direction": "BUY",
+                        "score": 0.85,
+                        "reasoning": "Strong earnings beat with raised guidance",
+                        "event_type": "earnings",
+                        "time_horizon": "swing",
+                    }
+                )
+            )
+        ]
 
         with patch("nexus.strategy_events.asyncio.to_thread") as mock_thread:
             # First call: news fetch (already cached), second: Claude API
             mock_thread.return_value = mock_response
-            with patch.object(strategy, "_fetch_news", return_value=[
-                {"title": "NVDA earnings beat expectations", "publisher": "Reuters"},
-            ]):
+            with patch.object(
+                strategy,
+                "_fetch_news",
+                return_value=[
+                    {"title": "NVDA earnings beat expectations", "publisher": "Reuters"},
+                ],
+            ):
                 with patch.object(strategy, "_get_client") as mock_client:
                     mock_client.return_value.messages.create = MagicMock(return_value=mock_response)
+
                     # Override to_thread to call the function directly for Claude
                     async def fake_to_thread(fn, *args, **kwargs):
                         return fn(*args, **kwargs)
+
                     mock_thread.side_effect = fake_to_thread
 
                     result = asyncio.get_event_loop().run_until_complete(
@@ -248,22 +258,34 @@ class TestSignalValidation:
         df = _make_df(60)
 
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text=json.dumps({
-            "direction": "SELL",
-            "score": 0.80,
-            "reasoning": "Guidance cut signals fundamental deterioration",
-            "event_type": "earnings",
-            "time_horizon": "swing",
-        }))]
+        mock_response.content = [
+            MagicMock(
+                text=json.dumps(
+                    {
+                        "direction": "SELL",
+                        "score": 0.80,
+                        "reasoning": "Guidance cut signals fundamental deterioration",
+                        "event_type": "earnings",
+                        "time_horizon": "swing",
+                    }
+                )
+            )
+        ]
 
-        with patch.object(strategy, "_fetch_news", return_value=[
-            {"title": "Company cuts guidance significantly", "publisher": "CNBC"},
-        ]):
+        with patch.object(
+            strategy,
+            "_fetch_news",
+            return_value=[
+                {"title": "Company cuts guidance significantly", "publisher": "CNBC"},
+            ],
+        ):
             with patch.object(strategy, "_get_client") as mock_client:
                 mock_client.return_value.messages.create = MagicMock(return_value=mock_response)
                 with patch("nexus.strategy_events.asyncio.to_thread") as mock_thread:
+
                     async def fake_to_thread(fn, *args, **kwargs):
                         return fn(*args, **kwargs)
+
                     mock_thread.side_effect = fake_to_thread
 
                     result = asyncio.get_event_loop().run_until_complete(
@@ -285,22 +307,34 @@ class TestSignalValidation:
         df = _make_df(60)
 
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text=json.dumps({
-            "direction": "HOLD",
-            "score": 0.50,
-            "reasoning": "Event already priced in",
-            "event_type": "other",
-            "time_horizon": "swing",
-        }))]
+        mock_response.content = [
+            MagicMock(
+                text=json.dumps(
+                    {
+                        "direction": "HOLD",
+                        "score": 0.50,
+                        "reasoning": "Event already priced in",
+                        "event_type": "other",
+                        "time_horizon": "swing",
+                    }
+                )
+            )
+        ]
 
-        with patch.object(strategy, "_fetch_news", return_value=[
-            {"title": "Company announces minor product launch", "publisher": "PR"},
-        ]):
+        with patch.object(
+            strategy,
+            "_fetch_news",
+            return_value=[
+                {"title": "Company announces minor product launch", "publisher": "PR"},
+            ],
+        ):
             with patch.object(strategy, "_get_client") as mock_client:
                 mock_client.return_value.messages.create = MagicMock(return_value=mock_response)
                 with patch("nexus.strategy_events.asyncio.to_thread") as mock_thread:
+
                     async def fake_to_thread(fn, *args, **kwargs):
                         return fn(*args, **kwargs)
+
                     mock_thread.side_effect = fake_to_thread
 
                     result = asyncio.get_event_loop().run_until_complete(
@@ -319,22 +353,34 @@ class TestSignalValidation:
         df = _make_df(60)
 
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text=json.dumps({
-            "direction": "BUY",
-            "score": 0.30,  # below default 0.65 threshold
-            "reasoning": "Weak signal",
-            "event_type": "other",
-            "time_horizon": "swing",
-        }))]
+        mock_response.content = [
+            MagicMock(
+                text=json.dumps(
+                    {
+                        "direction": "BUY",
+                        "score": 0.30,  # below default 0.65 threshold
+                        "reasoning": "Weak signal",
+                        "event_type": "other",
+                        "time_horizon": "swing",
+                    }
+                )
+            )
+        ]
 
-        with patch.object(strategy, "_fetch_news", return_value=[
-            {"title": "Minor earnings surprise for small company", "publisher": "PR"},
-        ]):
+        with patch.object(
+            strategy,
+            "_fetch_news",
+            return_value=[
+                {"title": "Minor earnings surprise for small company", "publisher": "PR"},
+            ],
+        ):
             with patch.object(strategy, "_get_client") as mock_client:
                 mock_client.return_value.messages.create = MagicMock(return_value=mock_response)
                 with patch("nexus.strategy_events.asyncio.to_thread") as mock_thread:
+
                     async def fake_to_thread(fn, *args, **kwargs):
                         return fn(*args, **kwargs)
+
                     mock_thread.side_effect = fake_to_thread
 
                     result = asyncio.get_event_loop().run_until_complete(
@@ -345,6 +391,7 @@ class TestSignalValidation:
 
 
 # ── Score clamping ───────────────────────────────────────────────────────────
+
 
 class TestScoreClamping:
     def test_score_clamped_to_max_1(self):
@@ -357,22 +404,34 @@ class TestScoreClamping:
         df = _make_df(60)
 
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text=json.dumps({
-            "direction": "BUY",
-            "score": 1.5,  # out of range
-            "reasoning": "Extremely bullish",
-            "event_type": "earnings",
-            "time_horizon": "swing",
-        }))]
+        mock_response.content = [
+            MagicMock(
+                text=json.dumps(
+                    {
+                        "direction": "BUY",
+                        "score": 1.5,  # out of range
+                        "reasoning": "Extremely bullish",
+                        "event_type": "earnings",
+                        "time_horizon": "swing",
+                    }
+                )
+            )
+        ]
 
-        with patch.object(strategy, "_fetch_news", return_value=[
-            {"title": "Company earnings blowout record quarter", "publisher": "CNBC"},
-        ]):
+        with patch.object(
+            strategy,
+            "_fetch_news",
+            return_value=[
+                {"title": "Company earnings blowout record quarter", "publisher": "CNBC"},
+            ],
+        ):
             with patch.object(strategy, "_get_client") as mock_client:
                 mock_client.return_value.messages.create = MagicMock(return_value=mock_response)
                 with patch("nexus.strategy_events.asyncio.to_thread") as mock_thread:
+
                     async def fake_to_thread(fn, *args, **kwargs):
                         return fn(*args, **kwargs)
+
                     mock_thread.side_effect = fake_to_thread
 
                     result = asyncio.get_event_loop().run_until_complete(
@@ -401,6 +460,7 @@ class TestScoreClamping:
 
 
 # ── Keyword coverage ─────────────────────────────────────────────────────────
+
 
 class TestKeywordCoverage:
     def test_all_keyword_categories_present(self):

@@ -32,6 +32,7 @@ Short selling
 Webull supports short selling on margin accounts. A SELL on an unowned
 stock places a short order. Paper trading account supports shorts.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -53,7 +54,7 @@ from nexus.logger import get_logger
 log = get_logger("broker.webull")
 
 _PAPER_ACCOUNT_TYPE = "paper"
-_LIVE_ACCOUNT_TYPE  = "live"
+_LIVE_ACCOUNT_TYPE = "live"
 
 
 class WebullBroker(BaseBroker):
@@ -80,13 +81,13 @@ class WebullBroker(BaseBroker):
         device_id: Optional[str] = None,
         paper: bool = True,
     ) -> None:
-        self.email       = email       or os.getenv("WEBULL_EMAIL", "")
-        self.password    = password    or os.getenv("WEBULL_PASSWORD", "")
+        self.email = email or os.getenv("WEBULL_EMAIL", "")
+        self.password = password or os.getenv("WEBULL_PASSWORD", "")
         self.trading_pin = trading_pin or os.getenv("WEBULL_TRADING_PIN", "")
-        self.device_id   = device_id   or os.getenv("WEBULL_DEVICE_ID", "")
-        self.paper       = paper
-        self._wb         = None
-        self._connected  = False
+        self.device_id = device_id or os.getenv("WEBULL_DEVICE_ID", "")
+        self.paper = paper
+        self._wb = None
+        self._connected = False
 
     @property
     def is_connected(self) -> bool:
@@ -97,6 +98,7 @@ class WebullBroker(BaseBroker):
     async def connect(self) -> bool:
         try:
             from webull import paper_webull, webull
+
             self._wb = paper_webull() if self.paper else webull()
 
             # Restore device_id to skip 2FA on repeated connects
@@ -108,7 +110,7 @@ class WebullBroker(BaseBroker):
                 username=self.email,
                 password=self.password,
                 device_name="NEXUS",
-                mfa="",                   # filled below if required
+                mfa="",  # filled below if required
                 save_token=True,
             )
 
@@ -138,8 +140,7 @@ class WebullBroker(BaseBroker):
             return True
 
         except ImportError:
-            log.warning("webull library not installed",
-                        hint="pip install webull")
+            log.warning("webull library not installed", hint="pip install webull")
             return False
         except Exception as e:
             log.error("Webull connect failed", error=str(e))
@@ -160,12 +161,13 @@ class WebullBroker(BaseBroker):
         try:
             import datetime
             import zoneinfo
-            et  = zoneinfo.ZoneInfo("America/New_York")
+
+            et = zoneinfo.ZoneInfo("America/New_York")
             now = datetime.datetime.now(tz=et)
             if now.weekday() >= 5:
                 return False
-            market_open  = now.replace(hour=9,  minute=30, second=0, microsecond=0)
-            market_close = now.replace(hour=16, minute=0,  second=0, microsecond=0)
+            market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+            market_close = now.replace(hour=16, minute=0, second=0, microsecond=0)
             return market_open <= now <= market_close
         except Exception:
             return True
@@ -179,9 +181,9 @@ class WebullBroker(BaseBroker):
             data = await asyncio.to_thread(self._wb.get_quote, stock=ticker)
             if not data:
                 return None
-            bid  = float(data.get("bidList", [{}])[0].get("price", 0) if data.get("bidList") else 0)
-            ask  = float(data.get("askList", [{}])[0].get("price", 0) if data.get("askList") else 0)
-            last = float(data.get("close",  0) or 0)
+            bid = float(data.get("bidList", [{}])[0].get("price", 0) if data.get("bidList") else 0)
+            ask = float(data.get("askList", [{}])[0].get("price", 0) if data.get("askList") else 0)
+            last = float(data.get("close", 0) or 0)
             if last == 0:
                 last = (bid + ask) / 2
             return Quote(
@@ -190,9 +192,9 @@ class WebullBroker(BaseBroker):
                 ask=ask,
                 last=last,
                 volume=int(data.get("volume", 0) or 0),
-                open=float(data.get("open",  0) or 0),
-                high=float(data.get("high",  0) or 0),
-                low=float(data.get("low",   0) or 0),
+                open=float(data.get("open", 0) or 0),
+                high=float(data.get("high", 0) or 0),
+                low=float(data.get("low", 0) or 0),
                 prev_close=float(data.get("pPrice", 0) or 0),
             )
         except Exception as e:
@@ -218,19 +220,21 @@ class WebullBroker(BaseBroker):
         try:
             raw = await asyncio.to_thread(self._wb.get_positions)
             result = []
-            for p in (raw or []):
+            for p in raw or []:
                 qty = float(p.get("position", 0) or 0)
                 if qty == 0:
                     continue
                 side = "SHORT" if qty < 0 else "LONG"
-                result.append(Position(
-                    ticker=str(p.get("ticker", {}).get("symbol", "") or ""),
-                    shares=abs(qty),
-                    avg_cost=float(p.get("costPrice", 0) or 0),
-                    current_price=float(p.get("lastPrice", 0) or 0),
-                    broker=self.name,
-                    side=side,
-                ))
+                result.append(
+                    Position(
+                        ticker=str(p.get("ticker", {}).get("symbol", "") or ""),
+                        shares=abs(qty),
+                        avg_cost=float(p.get("costPrice", 0) or 0),
+                        current_price=float(p.get("lastPrice", 0) or 0),
+                        broker=self.name,
+                        side=side,
+                    )
+                )
             return result
         except Exception as e:
             log.error("Webull get_positions failed", error=str(e))
@@ -241,10 +245,10 @@ class WebullBroker(BaseBroker):
             data = await asyncio.to_thread(self._wb.get_account)
             if not data:
                 raise ValueError("Empty account response")
-            net_liq  = float(data.get("netLiquidation", 0) or 0)
-            cash     = float(data.get("cashBalance",    0) or 0)
-            buy_pwr  = float(data.get("buyingPower",    0) or 0)
-            day_pnl  = float(data.get("dayProfitLoss",  0) or 0)
+            net_liq = float(data.get("netLiquidation", 0) or 0)
+            cash = float(data.get("cashBalance", 0) or 0)
+            buy_pwr = float(data.get("buyingPower", 0) or 0)
+            day_pnl = float(data.get("dayProfitLoss", 0) or 0)
             total_pnl = float(data.get("unrealizedProfitLoss", 0) or 0)
             return AccountInfo(
                 broker=self.name,
@@ -262,13 +266,17 @@ class WebullBroker(BaseBroker):
     # ── Orders ─────────────────────────────────────────────────────────────────
 
     async def place_order(
-        self, ticker: str, side: OrderSide, qty: float,
+        self,
+        ticker: str,
+        side: OrderSide,
+        qty: float,
         order_type: OrderType = OrderType.LIMIT,
         limit_price: Optional[float] = None,
     ) -> OrderResult:
         if not self.is_connected:
-            return OrderResult("", ticker, side, qty, 0, 0,
-                               OrderStatus.REJECTED, self.name, "Not connected")
+            return OrderResult(
+                "", ticker, side, qty, 0, 0, OrderStatus.REJECTED, self.name, "Not connected"
+            )
         try:
             action = "BUY" if side == OrderSide.BUY else "SELL"
 
@@ -291,8 +299,9 @@ class WebullBroker(BaseBroker):
                 )
 
             if not result or not isinstance(result, dict):
-                return OrderResult("", ticker, side, qty, 0, 0,
-                                   OrderStatus.REJECTED, self.name, str(result))
+                return OrderResult(
+                    "", ticker, side, qty, 0, 0, OrderStatus.REJECTED, self.name, str(result)
+                )
 
             order_id = str(result.get("orderId", ""))
             return OrderResult(
@@ -307,8 +316,7 @@ class WebullBroker(BaseBroker):
             )
         except Exception as e:
             log.error("Webull place_order failed", ticker=ticker, error=str(e))
-            return OrderResult("", ticker, side, qty, 0, 0,
-                               OrderStatus.REJECTED, self.name, str(e))
+            return OrderResult("", ticker, side, qty, 0, 0, OrderStatus.REJECTED, self.name, str(e))
 
     async def cancel_order(self, order_id: str) -> bool:
         try:
@@ -338,12 +346,14 @@ class WebullBroker(BaseBroker):
                         status=status,
                         broker=self.name,
                     )
-            return OrderResult(order_id, "", OrderSide.BUY, 0, 0, 0,
-                               OrderStatus.CANCELLED, self.name)
+            return OrderResult(
+                order_id, "", OrderSide.BUY, 0, 0, 0, OrderStatus.CANCELLED, self.name
+            )
         except Exception as e:
             log.error("Webull get_order_status failed", error=str(e))
-            return OrderResult(order_id, "", OrderSide.BUY, 0, 0, 0,
-                               OrderStatus.REJECTED, self.name)
+            return OrderResult(
+                order_id, "", OrderSide.BUY, 0, 0, 0, OrderStatus.REJECTED, self.name
+            )
 
     @staticmethod
     def _map_status(webull_status: str) -> OrderStatus:
@@ -353,6 +363,10 @@ class WebullBroker(BaseBroker):
             return OrderStatus.PARTIAL
         if "PENDING" in webull_status or "WORKING" in webull_status:
             return OrderStatus.SUBMITTED
-        if "CANCELLED" in webull_status or "REJECTED" in webull_status or "EXPIRED" in webull_status:
+        if (
+            "CANCELLED" in webull_status
+            or "REJECTED" in webull_status
+            or "EXPIRED" in webull_status
+        ):
             return OrderStatus.CANCELLED
         return OrderStatus.PENDING

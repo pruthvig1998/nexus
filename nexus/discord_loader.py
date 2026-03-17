@@ -28,6 +28,7 @@ Thread exports may appear as:
   - channel.type == "GuildPublicThread" / "GuildPrivateThread"
   - or messages with a "thread" key containing nested messages
 """
+
 from __future__ import annotations
 
 import json
@@ -53,6 +54,7 @@ _PROGRESS_INTERVAL = 500
 
 
 # ── Result dataclasses ────────────────────────────────────────────────────────
+
 
 @dataclass
 class MessageResult:
@@ -154,6 +156,7 @@ class LoadSummary:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _resolve_author(author_obj: dict) -> str:
     """Extract the best display name from a message author object.
 
@@ -245,6 +248,7 @@ def _is_discord_export(data: dict) -> bool:
 
 
 # ── Core loader ───────────────────────────────────────────────────────────────
+
 
 class DiscordLoader:
     """Loads DiscordChatExporter JSON exports and extracts trading signals.
@@ -494,16 +498,18 @@ class DiscordLoader:
 
         if signals:
             result.signals_found += len(signals)
-            result.signal_details.append(MessageResult(
-                message_id=msg_id,
-                timestamp=timestamp,
-                author=author,
-                channel=channel,
-                guild=guild,
-                content=content,
-                signals=signals,
-                is_thread=is_thread,
-            ))
+            result.signal_details.append(
+                MessageResult(
+                    message_id=msg_id,
+                    timestamp=timestamp,
+                    author=author,
+                    channel=channel,
+                    guild=guild,
+                    content=content,
+                    signals=signals,
+                    is_thread=is_thread,
+                )
+            )
 
     def log_to_db(self, summary: LoadSummary, db_path: str = "nexus.db") -> int:
         """Log all extracted signals to the NEXUS tracker database.
@@ -551,8 +557,7 @@ class DiscordLoader:
         # Direction breakdown
         dirs = summary.direction_breakdown
         if dirs.get("BUY") or dirs.get("SELL"):
-            print(f"\n  Direction:  "
-                  f"{dirs.get('BUY', 0)} BUY  /  {dirs.get('SELL', 0)} SELL")
+            print(f"\n  Direction:  {dirs.get('BUY', 0)} BUY  /  {dirs.get('SELL', 0)} SELL")
 
         # Top tickers
         top = summary.top_tickers
@@ -576,8 +581,7 @@ class DiscordLoader:
             for r in summary.results:
                 g = r.guild[:24]
                 c = r.channel[:19]
-                print(f"  {g:<25} {c:<20} {r.messages_scanned:>6,} "
-                      f"{r.signals_found:>5}")
+                print(f"  {g:<25} {c:<20} {r.messages_scanned:>6,} {r.signals_found:>5}")
 
         print("=" * w + "\n")
 
@@ -596,8 +600,7 @@ class DiscordLoader:
         all_msgs.sort(key=lambda x: x[1].timestamp)
 
         thread_marker = " [T]"
-        print(f"\n  {'Time':<20} {'Author':<18} {'Ticker':<7} {'Dir':<5} "
-              f"{'Score':>5}  Content")
+        print(f"\n  {'Time':<20} {'Author':<18} {'Ticker':<7} {'Dir':<5} {'Score':>5}  Content")
         print("  " + "-" * 80)
 
         shown = 0
@@ -606,13 +609,13 @@ class DiscordLoader:
                 ts = (msg.timestamp or "")[:16].replace("T", " ")
                 snippet = msg.content[:45].replace("\n", " ")
                 suffix = thread_marker if msg.is_thread else ""
-                print(f"  {ts:<20} {msg.author:<18} {sig.ticker:<7} "
-                      f"{sig.direction:<5} {sig.score:>5.2f}  {snippet}{suffix}")
+                print(
+                    f"  {ts:<20} {msg.author:<18} {sig.ticker:<7} "
+                    f"{sig.direction:<5} {sig.score:>5.2f}  {snippet}{suffix}"
+                )
                 shown += 1
                 if shown >= limit:
-                    remaining = sum(
-                        len(m.signals) for _, m in all_msgs
-                    ) - shown
+                    remaining = sum(len(m.signals) for _, m in all_msgs) - shown
                     if remaining > 0:
                         print(f"\n  ... and {remaining} more signals")
                     return

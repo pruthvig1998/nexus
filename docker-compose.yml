@@ -1,0 +1,11 @@
+services:
+  nexus:
+    build: .
+    env_file: .env
+    volumes:
+      - nexus-data:/app/data
+    restart: unless-stopped
+    command: ["run", "--paper", "--no-dashboard"]
+
+volumes:
+  nexus-data:

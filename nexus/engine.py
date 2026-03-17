@@ -9,6 +9,7 @@ v3 changes:
   - _execute(): tracks close/flip orders in _pending with side="CLOSE"
   - _execute(): scales position size down during portfolio drawdown
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -47,6 +48,7 @@ log = get_logger("engine")
 
 # ── EventBus (internal) ───────────────────────────────────────────────────────
 
+
 class EventType(Enum):
     SIGNAL_GENERATED = auto()
     ORDER_SUBMITTED = auto()
@@ -74,26 +76,35 @@ class _EventBus:
                 if asyncio.iscoroutine(result):
                     await result
             except Exception as e:
-                log.error("Event handler error", event=event_type.name, error=str(e))
+                log.error("Event handler error", event_type=event_type.name, error=str(e))
 
 
 # ── Pending order tracking ────────────────────────────────────────────────────
 
+
 class _PendingOrder:
     __slots__ = ("order_id", "trade_id", "ticker", "shares", "side", "checks", "max_checks")
 
-    def __init__(self, order_id: str, trade_id: str, ticker: str,
-                 shares: float, side: str, max_checks: int = 20) -> None:
+    def __init__(
+        self,
+        order_id: str,
+        trade_id: str,
+        ticker: str,
+        shares: float,
+        side: str,
+        max_checks: int = 20,
+    ) -> None:
         self.order_id = order_id
         self.trade_id = trade_id
         self.ticker = ticker
         self.shares = shares
-        self.side = side          # "LONG" | "SHORT"
+        self.side = side  # "LONG" | "SHORT"
         self.checks = 0
         self.max_checks = max_checks
 
 
 # ── Main engine ───────────────────────────────────────────────────────────────
+
 
 class NEXUSEngine:
     """Async scan-signal-execute loop with long/short support.
@@ -108,6 +119,7 @@ class NEXUSEngine:
         self,
         config: Optional[NEXUSConfig] = None,
         broker: Optional[BaseBroker] = None,
+        flatten_on_exit: bool = False,
     ) -> None:
         self._cfg = config or get_config()
         self._broker = broker or AlpacaBroker(self._cfg.alpaca)
@@ -116,6 +128,7 @@ class NEXUSEngine:
         self._bus = _EventBus()
         self._running = False
         self._scan_count = 0
+        self._flatten_on_exit = flatten_on_exit
 
         self._strategies = [
             MomentumStrategy(),
@@ -138,8 +151,9 @@ class NEXUSEngine:
         # Daily reset tracking
         self._last_reset_date: Optional[date] = None
 
-        # Drawdown tracking for position size scaling
-        self._peak_equity: float = 0.0
+        # Drawdown tracking for position size scaling — restore from DB
+        saved_peak = self._tracker.get_meta("peak_equity")
+        self._peak_equity: float = float(saved_peak) if saved_peak else 0.0
 
         # External signal queue (e.g. Discord feed)
         self._signal_queue: asyncio.Queue[Signal] = asyncio.Queue()
@@ -167,13 +181,17 @@ class NEXUSEngine:
         return self._price_cache
 
     async def start(self) -> None:
-        log.info("NEXUS starting", paper=self._cfg.paper,
-                 broker=self._cfg.active_broker,
-                 watchlist=len(self._cfg.watchlist))
+        log.info(
+            "NEXUS starting",
+            paper=self._cfg.paper,
+            broker=self._cfg.active_broker,
+            watchlist=len(self._cfg.watchlist),
+        )
 
         connected = await self._broker.connect()
         if connected:
             await self._bus.publish(EventType.BROKER_CONNECTED, self._broker.name)
+            await self._reconcile_positions()
         else:
             log.warning("Broker offline — running price-data-only mode")
 
@@ -182,6 +200,57 @@ class NEXUSEngine:
 
     async def stop(self) -> None:
         self._running = False
+
+        # Cancel all pending orders
+        for order_id, pending in list(self._pending.items()):
+            try:
+                await self._broker.cancel_order(order_id)
+                log.info("Cancelled pending order", ticker=pending.ticker, order_id=order_id[:8])
+            except Exception as e:
+                log.warning("Failed to cancel order", order_id=order_id[:8], error=str(e))
+        self._pending.clear()
+
+        # Log open positions with current P&L
+        if self._broker.is_connected:
+            try:
+                positions = await self._broker.get_positions()
+                for pos in positions:
+                    log.info(
+                        "Open position at shutdown",
+                        ticker=pos.ticker,
+                        side=pos.side,
+                        shares=pos.shares,
+                        unrealized_pnl=f"${pos.unrealized_pnl:+.2f}",
+                    )
+
+                # Flatten all positions if requested
+                if self._flatten_on_exit and positions:
+                    log.info("Flattening all positions on exit", count=len(positions))
+                    for pos in positions:
+                        try:
+                            if pos.side == "SHORT":
+                                await self._broker.close_short(
+                                    pos.ticker,
+                                    pos.shares,
+                                    limit_price=pos.current_price * 1.001,
+                                )
+                            else:
+                                await self._broker.place_order(
+                                    ticker=pos.ticker,
+                                    side=OrderSide.SELL,
+                                    qty=pos.shares,
+                                    order_type=OrderType.MARKET,
+                                )
+                            log.info("Flattened position", ticker=pos.ticker, side=pos.side)
+                        except Exception as e:
+                            log.error("Failed to flatten position", ticker=pos.ticker, error=str(e))
+            except Exception as e:
+                log.warning("Could not fetch positions at shutdown", error=str(e))
+
+        # Persist peak equity to SQLite
+        if self._peak_equity > 0:
+            self._tracker.save_meta("peak_equity", str(self._peak_equity))
+
         await self._broker.disconnect()
         log.info("NEXUS stopped", scans=self._scan_count)
 
@@ -197,9 +266,62 @@ class NEXUSEngine:
     def news_strategy(self) -> Optional[object]:
         """Return the NewsSentimentStrategy instance for headline injection."""
         for s in self._strategies:
-            if hasattr(s, 'name') and s.name == "news_sentiment":
+            if hasattr(s, "name") and s.name == "news_sentiment":
                 return s
         return None
+
+    # ── Position reconciliation ─────────────────────────────────────────────
+
+    async def _reconcile_positions(self) -> None:
+        """Reconcile broker positions against tracker state on startup."""
+        try:
+            broker_positions = await self._broker.get_positions()
+            tracker_trades = self._tracker.get_open_trades(broker=self._broker.name)
+
+            broker_by_ticker = {p.ticker: p for p in broker_positions}
+            tracker_by_ticker = {t["ticker"]: t for t in tracker_trades}
+
+            # Positions in broker but not in tracker — sync them
+            for ticker, pos in broker_by_ticker.items():
+                if ticker not in tracker_by_ticker:
+                    log.warning(
+                        "Broker has position not in tracker — syncing",
+                        ticker=ticker,
+                        side=pos.side,
+                        shares=pos.shares,
+                        avg_cost=f"${pos.avg_cost:.2f}",
+                    )
+                    self._tracker.sync_position(
+                        broker=self._broker.name,
+                        ticker=ticker,
+                        side=pos.side,
+                        shares=pos.shares,
+                        entry_price=pos.avg_cost,
+                        paper=self._cfg.paper,
+                    )
+
+            # Positions in tracker but not in broker — warn
+            for ticker, trade in tracker_by_ticker.items():
+                if ticker not in broker_by_ticker:
+                    log.warning(
+                        "Tracker has position not found at broker",
+                        ticker=ticker,
+                        side=trade.get("side"),
+                        shares=trade.get("shares"),
+                        trade_id=trade["id"][:8],
+                    )
+
+            synced = len([t for t in broker_by_ticker if t not in tracker_by_ticker])
+            missing = len([t for t in tracker_by_ticker if t not in broker_by_ticker])
+            if synced or missing:
+                log.info(
+                    "Position reconciliation complete", synced=synced, missing_at_broker=missing
+                )
+            else:
+                log.info("Position reconciliation complete — all in sync")
+
+        except Exception as e:
+            log.error("Position reconciliation failed", error=str(e))
 
     # ── Scan loop ─────────────────────────────────────────────────────────────
 
@@ -277,17 +399,18 @@ class NEXUSEngine:
 
         await self._poll_fills()
 
-        log.debug("Scan complete", cycle=self._scan_count,
-                  signals=len(best), pending=len(self._pending))
+        log.debug(
+            "Scan complete", cycle=self._scan_count, signals=len(best), pending=len(self._pending)
+        )
 
     # ── Price cache ───────────────────────────────────────────────────────────
 
     async def _refresh_prices(self) -> None:
         now = datetime.now(timezone.utc)
         stale = [
-            t for t in self._cfg.watchlist
-            if t not in self._cache_ts or
-            (now - self._cache_ts[t]).total_seconds() > 300
+            t
+            for t in self._cfg.watchlist
+            if t not in self._cache_ts or (now - self._cache_ts[t]).total_seconds() > 300
         ]
         # Evict tickers no longer on watchlist to prevent unbounded cache growth
         stale_keys = [t for t in self._price_cache if t not in self._cfg.watchlist]
@@ -300,9 +423,11 @@ class NEXUSEngine:
     async def _fetch_price(self, ticker: str, now: datetime) -> None:
         try:
             import yfinance as yf
+
             df = await asyncio.to_thread(
-                lambda: yf.download(ticker, period="1y", interval="1d",
-                                    auto_adjust=True, progress=False)
+                lambda: yf.download(
+                    ticker, period="1y", interval="1d", auto_adjust=True, progress=False
+                )
             )
             if df is not None and len(df) > 60:
                 if isinstance(df.columns, pd.MultiIndex):
@@ -357,8 +482,10 @@ class NEXUSEngine:
             signal.shares = float(final_shares)
 
             self._tracker.log_signal(
-                ticker=signal.ticker, strategy=signal.strategy,
-                score=signal.score, direction=signal.direction,
+                ticker=signal.ticker,
+                strategy=signal.strategy,
+                score=signal.score,
+                direction=signal.direction,
                 reasoning=signal.reasoning,
             )
 
@@ -377,7 +504,8 @@ class NEXUSEngine:
                     # we know the fill happened before re-evaluating
                     log.info("Covering short before going long", ticker=signal.ticker)
                     close_result = await self._broker.close_short(
-                        signal.ticker, existing.shares,
+                        signal.ticker,
+                        existing.shares,
                         signal.limit_price or signal.entry_price,
                     )
                     self._positions.pop(signal.ticker, None)
@@ -396,7 +524,9 @@ class NEXUSEngine:
 
                 # Open long
                 result = await self._broker.place_order(
-                    ticker=signal.ticker, side=OrderSide.BUY, qty=float(final_shares),
+                    ticker=signal.ticker,
+                    side=OrderSide.BUY,
+                    qty=float(final_shares),
                     order_type=OrderType.LIMIT,
                     limit_price=signal.limit_price or signal.entry_price,
                 )
@@ -407,7 +537,9 @@ class NEXUSEngine:
                     # Close long before going short — track the close order
                     log.info("Closing long before going short", ticker=signal.ticker)
                     close_result = await self._broker.place_order(
-                        ticker=signal.ticker, side=OrderSide.SELL, qty=existing.shares,
+                        ticker=signal.ticker,
+                        side=OrderSide.SELL,
+                        qty=existing.shares,
                         order_type=OrderType.MARKET,
                     )
                     self._positions.pop(signal.ticker, None)
@@ -426,7 +558,8 @@ class NEXUSEngine:
 
                 # Open short
                 result = await self._broker.open_short(
-                    ticker=signal.ticker, shares=float(final_shares),
+                    ticker=signal.ticker,
+                    shares=float(final_shares),
                     limit_price=signal.limit_price or signal.entry_price,
                 )
                 trade_side = "SHORT"
@@ -455,9 +588,14 @@ class NEXUSEngine:
                 side=trade_side,
             )
             await self._bus.publish(EventType.ORDER_SUBMITTED, result)
-            log.info("Order submitted", ticker=signal.ticker,
-                     side=trade_side, shares=final_shares,
-                     score=f"{signal.score:.2f}", strategy=signal.strategy)
+            log.info(
+                "Order submitted",
+                ticker=signal.ticker,
+                side=trade_side,
+                shares=final_shares,
+                score=f"{signal.score:.2f}",
+                strategy=signal.strategy,
+            )
 
         except Exception as e:
             log.error("Execute failed", ticker=signal.ticker, error=str(e))
@@ -476,19 +614,25 @@ class NEXUSEngine:
                 if status.status == OrderStatus.FILLED:
                     await self._bus.publish(EventType.ORDER_FILLED, status)
                     if pending.side != "CLOSE":
-                        await self._bus.publish(EventType.POSITION_OPENED, {
-                            "trade_id": pending.trade_id,
-                            "ticker": pending.ticker,
-                            "side": pending.side,
-                        })
+                        await self._bus.publish(
+                            EventType.POSITION_OPENED,
+                            {
+                                "trade_id": pending.trade_id,
+                                "ticker": pending.ticker,
+                                "side": pending.side,
+                            },
+                        )
                     else:
-                        await self._bus.publish(EventType.POSITION_CLOSED, {
-                            "trade_id": pending.trade_id,
-                            "ticker": pending.ticker,
-                            "side": "CLOSE",
-                            "pnl": None,
-                            "reason": "flip",
-                        })
+                        await self._bus.publish(
+                            EventType.POSITION_CLOSED,
+                            {
+                                "trade_id": pending.trade_id,
+                                "ticker": pending.ticker,
+                                "side": "CLOSE",
+                                "pnl": None,
+                                "reason": "flip",
+                            },
+                        )
                     del self._pending[order_id]
 
                 elif status.status in (OrderStatus.CANCELLED, OrderStatus.REJECTED):
@@ -525,6 +669,7 @@ class NEXUSEngine:
                 hit_stop = stop > 0 and price <= stop
                 hit_target = target > 0 and price >= target
                 exit_order_side = OrderSide.SELL
+
                 def exit_price_adj(p: float) -> float:
                     return p * 0.999  # slightly below for limit
             else:  # SHORT
@@ -543,22 +688,33 @@ class NEXUSEngine:
 
                 if side == "SHORT":
                     await self._broker.close_short(
-                        trade["ticker"], trade["shares"],
+                        trade["ticker"],
+                        trade["shares"],
                         limit_price=round(exit_price, 2),
                     )
                 else:
                     await self._broker.place_order(
-                        ticker=trade["ticker"], side=exit_order_side,
-                        qty=trade["shares"], order_type=OrderType.MARKET,
+                        ticker=trade["ticker"],
+                        side=exit_order_side,
+                        qty=trade["shares"],
+                        order_type=OrderType.MARKET,
                     )
 
                 pnl = self._tracker.close_trade(trade["id"], price, reason)
-                await self._bus.publish(EventType.POSITION_CLOSED, {
-                    "trade_id": trade["id"],
-                    "ticker": trade["ticker"],
-                    "side": side,
-                    "pnl": pnl,
-                    "reason": reason,
-                })
-                log.info("Position closed", ticker=trade["ticker"], side=side,
-                         pnl=f"${pnl:+.2f}" if pnl else "?", reason=reason)
+                await self._bus.publish(
+                    EventType.POSITION_CLOSED,
+                    {
+                        "trade_id": trade["id"],
+                        "ticker": trade["ticker"],
+                        "side": side,
+                        "pnl": pnl,
+                        "reason": reason,
+                    },
+                )
+                log.info(
+                    "Position closed",
+                    ticker=trade["ticker"],
+                    side=side,
+                    pnl=f"${pnl:+.2f}" if pnl else "?",
+                    reason=reason,
+                )

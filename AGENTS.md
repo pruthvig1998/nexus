@@ -51,6 +51,19 @@ log.debug("Verbose detail", data=payload)
 - Mock network calls, never mock math/indicators
 - Group related tests in classes: `class TestFeatureName:`
 
+### Error Handling
+- Use try/except around all broker calls and external I/O
+- Log errors with structlog: `log.error("Action failed", error=str(e))`
+- Never let exceptions crash the scan loop — catch and log in `_scan_cycle()`
+- Validate inputs at boundaries (CLI args, config loading, external signals)
+
+### Async / Concurrency
+- All broker calls are async (wrapped with `asyncio.to_thread` for sync SDKs)
+- Use `asyncio.gather(*tasks, return_exceptions=True)` for parallel strategy analysis
+- External feeds (Discord, Twitter) run as separate tasks in the same event loop
+- Signal queue (`asyncio.Queue`) is the interface between feeds and engine
+- Never use `time.sleep()` — always `await asyncio.sleep()`
+
 ## Architecture Boundaries
 
 ### What NOT to change without asking
@@ -162,6 +175,13 @@ Core deps are in `pyproject.toml`. Rules:
 - `aiohttp` is core (used by Twitter feed, general async HTTP)
 - `discord.py` is optional (`[discord]` extra)
 - Dev deps (`pytest`, `ruff`) go in `[dev]` extra
+
+### PR Workflow
+- All tests must pass: `pytest tests/ -v`
+- Lint must pass: `ruff check nexus/ tests/`
+- Format must pass: `ruff format nexus/ tests/ --check`
+- Update CLAUDE.md module table if adding new modules
+- Update README.md feature counts if adding features
 
 ## Files That Should Stay Updated
 

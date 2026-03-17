@@ -10,6 +10,7 @@ strategy="twitter" and Twitter-specific reasoning format.
 Instance health tracking rotates through multiple Nitter instances with
 automatic cooldown on failure/rate-limiting.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -22,13 +23,13 @@ from typing import Dict, List, Optional, Tuple
 import aiohttp
 
 from nexus.discord_feed import (
-    COMMON_WORDS,
     _BUY_KEYWORDS,
     _CONTEXT_WINDOW,
     _PRICE_NEAR,
     _SELL_KEYWORDS,
     _TICKER_BARE,
     _TICKER_EXPLICIT,
+    COMMON_WORDS,
     _compute_direction_score,
 )
 from nexus.logger import get_logger
@@ -85,13 +86,15 @@ def _parse_rss(xml_text: str) -> List[dict]:
         guid = (item.findtext("guid") or link).strip()
         pubdate = (item.findtext("pubDate") or "").strip()
 
-        items.append({
-            "title": title,
-            "text": text,
-            "link": link,
-            "guid": guid,
-            "pubdate": pubdate,
-        })
+        items.append(
+            {
+                "title": title,
+                "text": text,
+                "link": link,
+                "guid": guid,
+                "pubdate": pubdate,
+            }
+        )
 
     return items
 
@@ -227,9 +230,7 @@ class TwitterFeed:
         self._news_strategy = news_strategy
 
         self._seen_guids: set[str] = set()
-        self._instance_health: Dict[str, bool] = {
-            inst: True for inst in self._cfg.nitter_instances
-        }
+        self._instance_health: Dict[str, bool] = {inst: True for inst in self._cfg.nitter_instances}
         self._instance_last_fail: Dict[str, float] = {}
         self._running: bool = False
         self._session: Optional[aiohttp.ClientSession] = None

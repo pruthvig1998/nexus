@@ -7,6 +7,7 @@ v3.1 redesign:
   - Status bar with broker connection, scan info, counts
   - Dense, information-rich layout matching institutional terminals
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -31,23 +32,23 @@ log = get_logger("dashboard")
 
 # ── Theme ─────────────────────────────────────────────────────────────────────
 
-BG_NAVY    = "#0F172A"
-BORDER     = "#4A6FA5"
-GOLD       = "#C5A55A"
-GREEN      = "#22C55E"
-RED        = "#EF4444"
-DIM_TEXT   = "#64748B"
-BRIGHT     = "#E2E8F0"
-MID_TEXT   = "#94A3B8"
+BG_NAVY = "#0F172A"
+BORDER = "#4A6FA5"
+GOLD = "#C5A55A"
+GREEN = "#22C55E"
+RED = "#EF4444"
+DIM_TEXT = "#64748B"
+BRIGHT = "#E2E8F0"
+MID_TEXT = "#94A3B8"
 
-STYLE_BG       = Style(bgcolor=BG_NAVY)
-STYLE_BORDER   = Style(color=BORDER)
-STYLE_GOLD     = Style(color=GOLD, bold=True)
-STYLE_GREEN    = Style(color=GREEN)
-STYLE_RED      = Style(color=RED)
-STYLE_DIM      = Style(color=DIM_TEXT)
-STYLE_BRIGHT   = Style(color=BRIGHT)
-STYLE_MID      = Style(color=MID_TEXT)
+STYLE_BG = Style(bgcolor=BG_NAVY)
+STYLE_BORDER = Style(color=BORDER)
+STYLE_GOLD = Style(color=GOLD, bold=True)
+STYLE_GREEN = Style(color=GREEN)
+STYLE_RED = Style(color=RED)
+STYLE_DIM = Style(color=DIM_TEXT)
+STYLE_BRIGHT = Style(color=BRIGHT)
+STYLE_MID = Style(color=MID_TEXT)
 
 # Shorthand for inline markup
 G = GREEN
@@ -74,8 +75,9 @@ def _fmt_pnl(val: float, decimals: int = 0) -> str:
     return f"${val:+,.{decimals}f}"
 
 
-def _bar_string(pct: float, width: int = 20, filled_char: str = "\u2588",
-                empty_char: str = "\u2591") -> str:
+def _bar_string(
+    pct: float, width: int = 20, filled_char: str = "\u2588", empty_char: str = "\u2591"
+) -> str:
     """Build a text-based percentage bar."""
     pct = max(0.0, min(pct, 100.0))
     filled = int(round(pct / 100 * width))
@@ -112,8 +114,7 @@ class NEXUSDashboard:
     +-[ Broker: MOOMOO ]--[ Scan #42 ]--[ Pos: 5 ]------+
     """
 
-    def __init__(self, tracker: PortfolioTracker, paper: bool = True,
-                 event_bus=None) -> None:
+    def __init__(self, tracker: PortfolioTracker, paper: bool = True, event_bus=None) -> None:
         self._tracker = tracker
         self._paper = paper
         self._bus = event_bus
@@ -129,6 +130,7 @@ class NEXUSDashboard:
 
         if self._bus:
             from nexus.engine import EventType
+
             self._bus.subscribe(EventType.POSITION_OPENED, self._on_event)
             self._bus.subscribe(EventType.POSITION_CLOSED, self._on_event)
             self._bus.subscribe(EventType.ORDER_FILLED, self._on_event)
@@ -136,10 +138,15 @@ class NEXUSDashboard:
     async def _on_event(self, *_) -> None:
         pass  # re-render on next tick
 
-    def update(self, account: Optional[AccountInfo] = None,
-               positions: Optional[List[Position]] = None,
-               risk_level: str = "LOW", sharpe: float = 0.0,
-               scan_count: int = 0, next_scan_seconds: int = 0) -> None:
+    def update(
+        self,
+        account: Optional[AccountInfo] = None,
+        positions: Optional[List[Position]] = None,
+        risk_level: str = "LOW",
+        sharpe: float = 0.0,
+        scan_count: int = 0,
+        next_scan_seconds: int = 0,
+    ) -> None:
         if account:
             self._account = account
         if positions is not None:
@@ -180,8 +187,9 @@ class NEXUSDashboard:
             pc = _pnl_color(acct.day_pnl)
             pct = acct.day_pnl / max(acct.portfolio_value, 1) * 100
             row2.append("Day P&L ", style=STYLE_MID)
-            row2.append(f"{arrow} {_fmt_pnl(acct.day_pnl)} ({pct:+.2f}%)",
-                        style=Style(color=pc, bold=True))
+            row2.append(
+                f"{arrow} {_fmt_pnl(acct.day_pnl)} ({pct:+.2f}%)", style=Style(color=pc, bold=True)
+            )
 
             row2.append("  \u2502  ", style=STYLE_DIM)
             row2.append("Cash ", style=STYLE_MID)
@@ -251,7 +259,13 @@ class NEXUSDashboard:
         if not self._positions:
             t.add_row(
                 Text("No open positions", style=STYLE_DIM),
-                "", "", "", "", "", "", "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
             )
 
         title = Text()
@@ -302,13 +316,16 @@ class NEXUSDashboard:
             strategy = (s.get("strategy") or "")[:12]
             reasoning = (s.get("reasoning") or "")[:28]
 
-            t.add_row(ts, s.get("ticker", ""), dir_text, gauge,
-                      strategy, reasoning)
+            t.add_row(ts, s.get("ticker", ""), dir_text, gauge, strategy, reasoning)
 
         if not sigs:
             t.add_row(
                 Text("No signals yet", style=STYLE_DIM),
-                "", "", "", "", "",
+                "",
+                "",
+                "",
+                "",
+                "",
             )
 
         title = Text()
@@ -404,12 +421,17 @@ class NEXUSDashboard:
         t.add_row("Sharpe", Text(f"{self._sharpe:.2f}", style=Style(color=BRIGHT)))
 
         # Drawdown
-        dd_text = Text(f"{_fmt_pnl(drawdown)}", style=Style(color=RED if drawdown < 0 else MID_TEXT))
+        dd_text = Text(
+            f"{_fmt_pnl(drawdown)}", style=Style(color=RED if drawdown < 0 else MID_TEXT)
+        )
         t.add_row("Drawdown", dd_text)
 
         # Risk level with colored dot
         rc = {
-            "LOW": GREEN, "MEDIUM": "#EAB308", "HIGH": RED, "CRITICAL": RED,
+            "LOW": GREEN,
+            "MEDIUM": "#EAB308",
+            "HIGH": RED,
+            "CRITICAL": RED,
         }.get(self._risk_level, MID_TEXT)
         risk_text = Text()
         risk_text.append("\u25cf ", style=Style(color=rc))
@@ -512,7 +534,15 @@ class NEXUSDashboard:
         if not closed:
             t.add_row(
                 Text("No closed trades", style=STYLE_DIM),
-                "", "", "", "", "", "", "", "", "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
             )
 
         title = Text()
@@ -541,8 +571,10 @@ class NEXUSDashboard:
         bar.append("  \u25cf ", style=Style(color=GREEN if self._account else RED))
         bar.append(f"Broker: {broker_name}", style=Style(color=BRIGHT))
         bar.append(" | ", style=STYLE_DIM)
-        bar.append("Connected" if self._account else "Disconnected",
-                   style=Style(color=GREEN if self._account else RED))
+        bar.append(
+            "Connected" if self._account else "Disconnected",
+            style=Style(color=GREEN if self._account else RED),
+        )
 
         # Center padding
         bar.append("    \u2502    ", style=STYLE_DIM)
@@ -597,8 +629,7 @@ class NEXUSDashboard:
 
     async def run(self) -> None:
         self._running = True
-        with Live(self._layout(), console=self._console,
-                  refresh_per_second=2, screen=True) as live:
+        with Live(self._layout(), console=self._console, refresh_per_second=2, screen=True) as live:
             while self._running:
                 try:
                     live.update(self._layout())

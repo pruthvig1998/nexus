@@ -27,6 +27,7 @@ Security codes
 US equities use format "US.AAPL", "US.MSFT", etc.
 This adapter handles the conversion automatically (ticker → "US.TICKER").
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -81,10 +82,10 @@ class MoomooBroker(BaseBroker):
         trade_env: str = MoomooTrdEnv.SIMULATE,
         market: str = "US",
     ) -> None:
-        self.host       = host
-        self.port       = port
-        self.trade_env  = trade_env
-        self.market     = market
+        self.host = host
+        self.port = port
+        self.trade_env = trade_env
+        self.market = market
         self._quote_ctx = None
         self._trade_ctx = None
         self._connected = False
@@ -106,6 +107,7 @@ class MoomooBroker(BaseBroker):
     async def connect(self) -> bool:
         try:
             import moomoo as ft
+
             self._quote_ctx = ft.OpenQuoteContext(host=self.host, port=self.port)
             self._trade_ctx = ft.OpenSecTradeContext(
                 filter_trdmarket=ft.TrdMarket.US,
@@ -119,17 +121,13 @@ class MoomooBroker(BaseBroker):
                 raise ConnectionError("OpenD not reachable")
 
             self._connected = True
-            log.info("Moomoo connected",
-                     host=self.host, port=self.port,
-                     env=self.trade_env)
+            log.info("Moomoo connected", host=self.host, port=self.port, env=self.trade_env)
             return True
         except ImportError:
-            log.warning("moomoo-api not installed",
-                        hint="pip install moomoo-api")
+            log.warning("moomoo-api not installed", hint="pip install moomoo-api")
             return False
         except Exception as e:
-            log.error("Moomoo connect failed", error=str(e),
-                      hint="Is OpenD gateway running?")
+            log.error("Moomoo connect failed", error=str(e), hint="Is OpenD gateway running?")
             return False
 
     async def disconnect(self) -> None:
@@ -147,9 +145,10 @@ class MoomooBroker(BaseBroker):
             return True  # fallback: assume open
         try:
             import moomoo as ft
+
             ret, data = await asyncio.to_thread(self._quote_ctx.get_market_state, ["US.AAPL"])
             if ret != ft.RET_OK or data.empty:
-                return True   # fallback: assume open
+                return True  # fallback: assume open
             state = data["market_state"].iloc[0]
             # MORNING_PRE, MORNING, AFTERNOON = open; CLOSED, AFTER_HOURS = closed for trading
             return state in ("MORNING", "AFTERNOON")
@@ -163,14 +162,15 @@ class MoomooBroker(BaseBroker):
             return None
         try:
             import moomoo as ft
+
             code = _us(ticker)
             ret, data = await asyncio.to_thread(self._quote_ctx.get_stock_quote, [code])
             if ret != ft.RET_OK or data.empty:
                 return None
             row = data.iloc[0]
-            bid   = float(row.get("bid_price", 0) or 0)
-            ask   = float(row.get("ask_price", 0) or 0)
-            last  = float(row.get("last_done", 0) or 0)
+            bid = float(row.get("bid_price", 0) or 0)
+            ask = float(row.get("ask_price", 0) or 0)
+            last = float(row.get("last_done", 0) or 0)
             if last == 0:
                 last = (bid + ask) / 2
             return Quote(
@@ -181,7 +181,7 @@ class MoomooBroker(BaseBroker):
                 volume=int(row.get("volume", 0) or 0),
                 open=float(row.get("open_price", 0) or 0),
                 high=float(row.get("high_price", 0) or 0),
-                low=float(row.get("low_price",  0) or 0),
+                low=float(row.get("low_price", 0) or 0),
                 prev_close=float(row.get("prev_close_price", 0) or 0),
             )
         except Exception as e:
@@ -193,6 +193,7 @@ class MoomooBroker(BaseBroker):
             return {}
         try:
             import moomoo as ft
+
             codes = [_us(t) for t in tickers]
             ret, data = await asyncio.to_thread(self._quote_ctx.get_stock_quote, codes)
             if ret != ft.RET_OK or data.empty:
@@ -200,17 +201,20 @@ class MoomooBroker(BaseBroker):
             result = {}
             for _, row in data.iterrows():
                 t = _bare(str(row["code"]))
-                bid   = float(row.get("bid_price", 0) or 0)
-                ask   = float(row.get("ask_price", 0) or 0)
-                last  = float(row.get("last_done", 0) or 0)
+                bid = float(row.get("bid_price", 0) or 0)
+                ask = float(row.get("ask_price", 0) or 0)
+                last = float(row.get("last_done", 0) or 0)
                 if last == 0:
                     last = (bid + ask) / 2
                 result[t] = Quote(
-                    ticker=t, bid=bid, ask=ask, last=last,
+                    ticker=t,
+                    bid=bid,
+                    ask=ask,
+                    last=last,
                     volume=int(row.get("volume", 0) or 0),
                     open=float(row.get("open_price", 0) or 0),
                     high=float(row.get("high_price", 0) or 0),
-                    low=float(row.get("low_price",  0) or 0),
+                    low=float(row.get("low_price", 0) or 0),
                     prev_close=float(row.get("prev_close_price", 0) or 0),
                 )
             return result
@@ -225,6 +229,7 @@ class MoomooBroker(BaseBroker):
             return []
         try:
             import moomoo as ft
+
             env = ft.TrdEnv.SIMULATE if self.trade_env == MoomooTrdEnv.SIMULATE else ft.TrdEnv.REAL
             ret, data = await asyncio.to_thread(self._trade_ctx.position_list_query, trd_env=env)
             if ret != ft.RET_OK or data.empty:
@@ -236,14 +241,16 @@ class MoomooBroker(BaseBroker):
                     continue
                 side = "SHORT" if qty < 0 else "LONG"
                 ticker = _bare(str(row.get("code", "")))
-                result.append(Position(
-                    ticker=ticker,
-                    shares=abs(qty),
-                    avg_cost=float(row.get("cost_price", 0) or 0),
-                    current_price=float(row.get("market_val", 0) or 0) / max(abs(qty), 1),
-                    broker=self.name,
-                    side=side,
-                ))
+                result.append(
+                    Position(
+                        ticker=ticker,
+                        shares=abs(qty),
+                        avg_cost=float(row.get("cost_price", 0) or 0),
+                        current_price=float(row.get("market_val", 0) or 0) / max(abs(qty), 1),
+                        broker=self.name,
+                        side=side,
+                    )
+                )
             return result
         except Exception as e:
             log.error("Moomoo get_positions failed", error=str(e))
@@ -265,14 +272,15 @@ class MoomooBroker(BaseBroker):
             return AccountInfo(self.name, 0, 0, 0, 0, 0, paper)
         try:
             import moomoo as ft
+
             env = ft.TrdEnv.SIMULATE if self.trade_env == MoomooTrdEnv.SIMULATE else ft.TrdEnv.REAL
             ret, data = await asyncio.to_thread(self._trade_ctx.accinfo_query, trd_env=env)
             if ret != ft.RET_OK or data.empty:
                 raise ValueError(f"accinfo_query failed: {data}")
             row = data.iloc[0]
-            cash      = self._safe_float(row.get("cash", 0))
-            net_liq   = self._safe_float(row.get("total_assets", 0))
-            buy_pwr   = self._safe_float(row.get("max_power_short", 0))
+            cash = self._safe_float(row.get("cash", 0))
+            net_liq = self._safe_float(row.get("total_assets", 0))
+            buy_pwr = self._safe_float(row.get("max_power_short", 0))
             total_pnl = self._safe_float(row.get("total_profit_val", 0))
             return AccountInfo(
                 broker=self.name,
@@ -291,25 +299,30 @@ class MoomooBroker(BaseBroker):
     # ── Orders ─────────────────────────────────────────────────────────────────
 
     async def place_order(
-        self, ticker: str, side: OrderSide, qty: float,
+        self,
+        ticker: str,
+        side: OrderSide,
+        qty: float,
         order_type: OrderType = OrderType.LIMIT,
         limit_price: Optional[float] = None,
     ) -> OrderResult:
         if not await self._ensure_connected():
-            return OrderResult("", ticker, side, qty, 0, 0,
-                               OrderStatus.REJECTED, self.name, "Not connected")
+            return OrderResult(
+                "", ticker, side, qty, 0, 0, OrderStatus.REJECTED, self.name, "Not connected"
+            )
         try:
             import moomoo as ft
-            env  = ft.TrdEnv.SIMULATE if self.trade_env == MoomooTrdEnv.SIMULATE else ft.TrdEnv.REAL
+
+            env = ft.TrdEnv.SIMULATE if self.trade_env == MoomooTrdEnv.SIMULATE else ft.TrdEnv.REAL
             code = _us(ticker)
             trd_side = ft.TrdSide.BUY if side == OrderSide.BUY else ft.TrdSide.SELL
 
             if order_type == OrderType.MARKET:
-                price    = 0.0
+                price = 0.0
                 ord_type = ft.OrderType.MARKET
             else:
-                price    = round(limit_price or 0.0, 2)
-                ord_type = ft.OrderType.NORMAL   # LIMIT
+                price = round(limit_price or 0.0, 2)
+                ord_type = ft.OrderType.NORMAL  # LIMIT
 
             ret, data = await asyncio.to_thread(
                 self._trade_ctx.place_order,
@@ -321,29 +334,30 @@ class MoomooBroker(BaseBroker):
                 trd_env=env,
             )
             if ret != ft.RET_OK or data.empty:
-                return OrderResult("", ticker, side, qty, 0, 0,
-                                   OrderStatus.REJECTED, self.name, str(data))
+                return OrderResult(
+                    "", ticker, side, qty, 0, 0, OrderStatus.REJECTED, self.name, str(data)
+                )
             order_id = str(data.iloc[0].get("order_id", ""))
             return OrderResult(
                 order_id=order_id,
                 ticker=ticker,
                 side=side,
                 requested_qty=qty,
-                filled_qty=0.0,    # fill confirmed via get_order_status
+                filled_qty=0.0,  # fill confirmed via get_order_status
                 avg_fill_price=price,
                 status=OrderStatus.SUBMITTED,
                 broker=self.name,
             )
         except Exception as e:
             log.error("Moomoo place_order failed", ticker=ticker, error=str(e))
-            return OrderResult("", ticker, side, qty, 0, 0,
-                               OrderStatus.REJECTED, self.name, str(e))
+            return OrderResult("", ticker, side, qty, 0, 0, OrderStatus.REJECTED, self.name, str(e))
 
     async def cancel_order(self, order_id: str) -> bool:
         if not await self._ensure_connected():
             return False
         try:
             import moomoo as ft
+
             env = ft.TrdEnv.SIMULATE if self.trade_env == MoomooTrdEnv.SIMULATE else ft.TrdEnv.REAL
             ret, data = await asyncio.to_thread(
                 self._trade_ctx.modify_order,
@@ -360,18 +374,22 @@ class MoomooBroker(BaseBroker):
 
     async def get_order_status(self, order_id: str) -> OrderResult:
         if not await self._ensure_connected():
-            return OrderResult(order_id, "", OrderSide.BUY, 0, 0, 0,
-                               OrderStatus.CANCELLED, self.name)
+            return OrderResult(
+                order_id, "", OrderSide.BUY, 0, 0, 0, OrderStatus.CANCELLED, self.name
+            )
         try:
             import moomoo as ft
+
             env = ft.TrdEnv.SIMULATE if self.trade_env == MoomooTrdEnv.SIMULATE else ft.TrdEnv.REAL
             ret, data = await asyncio.to_thread(
                 self._trade_ctx.order_list_query,
-                order_id=order_id, trd_env=env,
+                order_id=order_id,
+                trd_env=env,
             )
             if ret != ft.RET_OK or data.empty:
-                return OrderResult(order_id, "", OrderSide.BUY, 0, 0, 0,
-                                   OrderStatus.CANCELLED, self.name)
+                return OrderResult(
+                    order_id, "", OrderSide.BUY, 0, 0, 0, OrderStatus.CANCELLED, self.name
+                )
             row = data.iloc[0]
             status = self._map_status(str(row.get("order_status", "")))
             trd_side_str = str(row.get("trd_side", "BUY")).upper()
@@ -389,8 +407,9 @@ class MoomooBroker(BaseBroker):
             )
         except Exception as e:
             log.error("Moomoo get_order_status failed", error=str(e))
-            return OrderResult(order_id, "", OrderSide.BUY, 0, 0, 0,
-                               OrderStatus.REJECTED, self.name)
+            return OrderResult(
+                order_id, "", OrderSide.BUY, 0, 0, 0, OrderStatus.REJECTED, self.name
+            )
 
     @staticmethod
     def _map_status(futu_status: str) -> OrderStatus:

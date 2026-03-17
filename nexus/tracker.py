@@ -6,6 +6,7 @@ v3 changes:
       LONG  P&L = (exit - entry) × shares
       SHORT P&L = (entry - exit) × shares
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -36,6 +37,9 @@ CREATE TABLE IF NOT EXISTS signals (
     id TEXT, ticker TEXT, strategy TEXT,
     score REAL, direction TEXT, reasoning TEXT, ts TEXT
 );
+CREATE TABLE IF NOT EXISTS meta (
+    key TEXT PRIMARY KEY, value TEXT
+);
 CREATE INDEX IF NOT EXISTS idx_trades_ticker ON trades(ticker);
 CREATE INDEX IF NOT EXISTS idx_signals_ts ON signals(ts);
 """
@@ -44,7 +48,18 @@ CREATE INDEX IF NOT EXISTS idx_signals_ts ON signals(ts);
 class PortfolioTracker:
     def __init__(self, db_path: str = "nexus.db") -> None:
         self._db_path = db_path
-        self._init_db()
+        # For :memory: databases, keep a persistent connection so the schema
+        # survives across calls (each sqlite3.connect(":memory:") creates a
+        # new, empty database).
+        if db_path == ":memory:":
+            self._persistent_conn = sqlite3.connect(":memory:", check_same_thread=False)
+            self._persistent_conn.execute("PRAGMA journal_mode=WAL")
+            self._persistent_conn.row_factory = sqlite3.Row
+            self._persistent_conn.executescript(SCHEMA)
+            self._persistent_conn.commit()
+        else:
+            self._persistent_conn = None
+            self._init_db()
 
     def _init_db(self) -> None:
         with self._conn() as conn:
@@ -52,23 +67,42 @@ class PortfolioTracker:
 
     @contextmanager
     def _conn(self):
-        conn = sqlite3.connect(self._db_path, check_same_thread=False)
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.row_factory = sqlite3.Row
-        try:
-            yield conn
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
+        if self._persistent_conn is not None:
+            # Reuse persistent connection for :memory: databases
+            try:
+                yield self._persistent_conn
+                self._persistent_conn.commit()
+            except Exception:
+                self._persistent_conn.rollback()
+                raise
+        else:
+            conn = sqlite3.connect(self._db_path, check_same_thread=False)
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.row_factory = sqlite3.Row
+            try:
+                yield conn
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+            finally:
+                conn.close()
 
     # ── Trades ───────────────────────────────────────────────────────────────
 
-    def open_trade(self, broker: str, ticker: str, side: str, shares: float,
-                   entry_price: float, stop_price: float, target_price: float,
-                   strategy: str, signal_score: float, paper: bool = True) -> str:
+    def open_trade(
+        self,
+        broker: str,
+        ticker: str,
+        side: str,
+        shares: float,
+        entry_price: float,
+        stop_price: float,
+        target_price: float,
+        strategy: str,
+        signal_score: float,
+        paper: bool = True,
+    ) -> str:
         """Open a new trade. side should be "LONG" or "SHORT"."""
         trade_id = str(uuid.uuid4())
         with self._conn() as conn:
@@ -77,20 +111,37 @@ class PortfolioTracker:
                    (id,broker,ticker,side,shares,entry_price,stop_price,
                     target_price,strategy,signal_score,opened_at,paper)
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (trade_id, broker, ticker, side, shares, entry_price,
-                 stop_price, target_price, strategy, signal_score,
-                 datetime.now(timezone.utc).isoformat(), int(paper)),
+                (
+                    trade_id,
+                    broker,
+                    ticker,
+                    side,
+                    shares,
+                    entry_price,
+                    stop_price,
+                    target_price,
+                    strategy,
+                    signal_score,
+                    datetime.now(timezone.utc).isoformat(),
+                    int(paper),
+                ),
             )
-        log.info("Trade opened", id=trade_id[:8], ticker=ticker, side=side,
-                 shares=shares, price=f"${entry_price:.2f}")
+        log.info(
+            "Trade opened",
+            id=trade_id[:8],
+            ticker=ticker,
+            side=side,
+            shares=shares,
+            price=f"${entry_price:.2f}",
+        )
         return trade_id
 
-    def close_trade(self, trade_id: str, exit_price: float,
-                    exit_reason: str = "manual") -> Optional[float]:
+    def close_trade(
+        self, trade_id: str, exit_price: float, exit_reason: str = "manual"
+    ) -> Optional[float]:
         """Close a trade. P&L is direction-aware."""
         with self._conn() as conn:
-            row = conn.execute("SELECT * FROM trades WHERE id=?",
-                               (trade_id,)).fetchone()
+            row = conn.execute("SELECT * FROM trades WHERE id=?", (trade_id,)).fetchone()
             if not row:
                 return None
             trade = dict(row)
@@ -110,22 +161,24 @@ class PortfolioTracker:
                    trades=trades+1""",
                 (today, pnl),
             )
-        log.info("Trade closed", id=trade_id[:8], side=side,
-                 pnl=f"${pnl:+.2f}", reason=exit_reason)
+        log.info("Trade closed", id=trade_id[:8], side=side, pnl=f"${pnl:+.2f}", reason=exit_reason)
         return pnl
 
     def get_open_trades(self, broker: Optional[str] = None) -> List[dict]:
         with self._conn() as conn:
-            q = ("SELECT * FROM trades WHERE closed_at IS NULL AND broker=?"
-                 if broker else "SELECT * FROM trades WHERE closed_at IS NULL")
+            q = (
+                "SELECT * FROM trades WHERE closed_at IS NULL AND broker=?"
+                if broker
+                else "SELECT * FROM trades WHERE closed_at IS NULL"
+            )
             rows = conn.execute(q, (broker,) if broker else ()).fetchall()
         return [dict(r) for r in rows]
 
     def get_closed_trades(self, limit: int = 100) -> List[dict]:
         with self._conn() as conn:
             rows = conn.execute(
-                "SELECT * FROM trades WHERE closed_at IS NOT NULL "
-                "ORDER BY closed_at DESC LIMIT ?", (limit,)
+                "SELECT * FROM trades WHERE closed_at IS NOT NULL ORDER BY closed_at DESC LIMIT ?",
+                (limit,),
             ).fetchall()
         return [dict(r) for r in rows]
 
@@ -133,8 +186,9 @@ class PortfolioTracker:
 
     def get_today_pnl(self) -> Tuple[float, int]:
         with self._conn() as conn:
-            row = conn.execute("SELECT pnl,trades FROM daily_pnl WHERE date=?",
-                               (date.today().isoformat(),)).fetchone()
+            row = conn.execute(
+                "SELECT pnl,trades FROM daily_pnl WHERE date=?", (date.today().isoformat(),)
+            ).fetchone()
         return (float(row["pnl"]), int(row["trades"])) if row else (0.0, 0)
 
     def get_pnl_history(self, days: int = 30) -> List[dict]:
@@ -146,14 +200,22 @@ class PortfolioTracker:
 
     # ── Signals ───────────────────────────────────────────────────────────
 
-    def log_signal(self, ticker: str, strategy: str, score: float,
-                   direction: str, reasoning: str) -> None:
+    def log_signal(
+        self, ticker: str, strategy: str, score: float, direction: str, reasoning: str
+    ) -> None:
         with self._conn() as conn:
             conn.execute(
                 "INSERT INTO signals (id,ticker,strategy,score,direction,reasoning,ts) "
                 "VALUES (?,?,?,?,?,?,?)",
-                (str(uuid.uuid4()), ticker, strategy, score, direction,
-                 reasoning, datetime.now(timezone.utc).isoformat()),
+                (
+                    str(uuid.uuid4()),
+                    ticker,
+                    strategy,
+                    score,
+                    direction,
+                    reasoning,
+                    datetime.now(timezone.utc).isoformat(),
+                ),
             )
 
     def get_recent_signals(self, limit: int = 50) -> List[dict]:
@@ -163,12 +225,59 @@ class PortfolioTracker:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    # ── Reconciliation ────────────────────────────────────────────────────
+
+    def sync_position(
+        self,
+        broker: str,
+        ticker: str,
+        side: str,
+        shares: float,
+        entry_price: float,
+        paper: bool = True,
+    ) -> str:
+        """Sync a broker position into the tracker (reconciliation)."""
+        return self.open_trade(
+            broker=broker,
+            ticker=ticker,
+            side=side,
+            shares=shares,
+            entry_price=entry_price,
+            stop_price=0.0,
+            target_price=0.0,
+            strategy="reconciled",
+            signal_score=0.0,
+            paper=paper,
+        )
+
+    # ── Meta key-value store ──────────────────────────────────────────────
+
+    def save_meta(self, key: str, value: str) -> None:
+        """Save a key-value pair to the meta table."""
+        with self._conn() as conn:
+            conn.execute(
+                "INSERT INTO meta (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (key, value),
+            )
+
+    def get_meta(self, key: str) -> Optional[str]:
+        """Get a value from the meta table."""
+        with self._conn() as conn:
+            row = conn.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+        return row["value"] if row else None
+
     # ── Stats ─────────────────────────────────────────────────────────────
 
     def compute_stats(self) -> dict:
-        defaults = {"win_rate": 0.5, "profit_factor": 1.0,
-                    "avg_win": 1.5, "avg_loss": 1.0,
-                    "total_trades": 0, "total_pnl": 0.0}
+        defaults = {
+            "win_rate": 0.5,
+            "profit_factor": 1.0,
+            "avg_win": 1.5,
+            "avg_loss": 1.0,
+            "total_trades": 0,
+            "total_pnl": 0.0,
+        }
         trades = self.get_closed_trades(limit=500)
         if not trades:
             return defaults

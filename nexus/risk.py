@@ -9,6 +9,7 @@ v3 changes:
   - Peak equity tracking for portfolio drawdown circuit breaker
   - Volatility scaling: reduces max_position_pct when VIX-equivalent is high
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -22,8 +23,8 @@ log = get_logger("risk")
 
 # ── Position Sizing ───────────────────────────────────────────────────────────
 
-def kelly_fraction(win_rate: float, win_loss_ratio: float,
-                   fraction: float = 0.25) -> float:
+
+def kelly_fraction(win_rate: float, win_loss_ratio: float, fraction: float = 0.25) -> float:
     if win_loss_ratio <= 0:
         return 0.0
     loss_rate = 1.0 - win_rate
@@ -31,12 +32,19 @@ def kelly_fraction(win_rate: float, win_loss_ratio: float,
     return max(0.0, min(kelly * fraction, 0.20))
 
 
-def size_position(portfolio_value: float, cash: float, entry_price: float,
-                  stop_price: float, signal_score: float,
-                  win_rate: float = 0.55, avg_win: float = 1.5,
-                  avg_loss: float = 1.0, kelly_frac: float = 0.25,
-                  max_position_pct: float = 0.05,
-                  signal_direction: str = "BUY") -> int:
+def size_position(
+    portfolio_value: float,
+    cash: float,
+    entry_price: float,
+    stop_price: float,
+    signal_score: float,
+    win_rate: float = 0.55,
+    avg_win: float = 1.5,
+    avg_loss: float = 1.0,
+    kelly_frac: float = 0.25,
+    max_position_pct: float = 0.05,
+    signal_direction: str = "BUY",
+) -> int:
     risk_per_share = abs(entry_price - stop_price)
     if risk_per_share < 0.001 or entry_price <= 0:
         return 0
@@ -58,6 +66,7 @@ def size_position(portfolio_value: float, cash: float, entry_price: float,
 
 
 # ── Risk Limits ───────────────────────────────────────────────────────────────
+
 
 @dataclass
 class RiskCheckResult:
@@ -84,17 +93,22 @@ class RiskLimits:
                 loss_pct = abs(pnl) / portfolio_value
                 if loss_pct > self._cfg.daily_loss_halt_pct:
                     self._halted = True
-                    log.warning("Daily loss halt triggered",
-                                loss_pct=f"{loss_pct:.1%}",
-                                threshold=f"{self._cfg.daily_loss_halt_pct:.1%}")
+                    log.warning(
+                        "Daily loss halt triggered",
+                        loss_pct=f"{loss_pct:.1%}",
+                        threshold=f"{self._cfg.daily_loss_halt_pct:.1%}",
+                    )
 
             # Portfolio drawdown circuit breaker: halt if > 12% off peak
             if self._peak_equity > 0:
                 drawdown = 1.0 - (portfolio_value / self._peak_equity)
                 if drawdown > 0.12 and not self._halted:
                     self._halted = True
-                    log.warning("Portfolio drawdown halt triggered",
-                                drawdown=f"{drawdown:.1%}", peak=f"${self._peak_equity:,.0f}")
+                    log.warning(
+                        "Portfolio drawdown halt triggered",
+                        drawdown=f"{drawdown:.1%}",
+                        peak=f"${self._peak_equity:,.0f}",
+                    )
 
     def reset_daily(self) -> None:
         """Reset intraday halt. Does NOT reset peak equity (that's a portfolio-level stat)."""
@@ -122,9 +136,16 @@ class RiskLimits:
         # At 0% DD → scale=1.0; at 10% DD → scale=0.5; floor at 0.5
         return max(0.5, 1.0 - dd * 5.0)
 
-    def check(self, signal_score: float, portfolio_value: float, cash: float,
-              open_positions: List, proposed_shares: int,
-              entry_price: float, signal_direction: str = "BUY") -> RiskCheckResult:
+    def check(
+        self,
+        signal_score: float,
+        portfolio_value: float,
+        cash: float,
+        open_positions: List,
+        proposed_shares: int,
+        entry_price: float,
+        signal_direction: str = "BUY",
+    ) -> RiskCheckResult:
         """Check risk limits before opening a position.
 
         Args:
@@ -136,12 +157,13 @@ class RiskLimits:
             return RiskCheckResult(False, "Daily loss halt active")
 
         if signal_score < get_config().strategy.min_signal_score:
-            return RiskCheckResult(False,
-                f"Score {signal_score:.2f} < min {get_config().strategy.min_signal_score:.2f}")
+            return RiskCheckResult(
+                False,
+                f"Score {signal_score:.2f} < min {get_config().strategy.min_signal_score:.2f}",
+            )
 
         if len(open_positions) >= cfg.max_open_positions:
-            return RiskCheckResult(False,
-                f"Max positions ({cfg.max_open_positions}) reached")
+            return RiskCheckResult(False, f"Max positions ({cfg.max_open_positions}) reached")
 
         proposed_value = proposed_shares * entry_price
 
@@ -156,8 +178,7 @@ class RiskLimits:
             max_shares = int(portfolio_value * cfg.max_position_pct / entry_price)
             if max_shares < 1:
                 return RiskCheckResult(False, "Position too small after cap")
-            return RiskCheckResult(True, "Approved (size-capped)",
-                                   adjusted_shares=max_shares)
+            return RiskCheckResult(True, "Approved (size-capped)", adjusted_shares=max_shares)
 
         # Separate long/short exposure tracking
         longs = [p for p in open_positions if getattr(p, "side", "LONG") == "LONG"]
@@ -169,21 +190,24 @@ class RiskLimits:
             if signal_direction == "BUY":
                 new_long_exp = (long_exposure + proposed_value) / portfolio_value
                 if new_long_exp > cfg.max_portfolio_exposure:
-                    return RiskCheckResult(False,
-                        f"Long exposure {new_long_exp:.1%} > limit {cfg.max_portfolio_exposure:.1%}")
+                    return RiskCheckResult(
+                        False,
+                        f"Long exposure {new_long_exp:.1%} > limit {cfg.max_portfolio_exposure:.1%}",
+                    )
             else:  # SELL = open short
                 new_short_exp = (short_exposure + proposed_value) / portfolio_value
                 if new_short_exp > cfg.max_short_exposure_pct:
-                    return RiskCheckResult(False,
-                        f"Short exposure {new_short_exp:.1%} > limit {cfg.max_short_exposure_pct:.1%}")
+                    return RiskCheckResult(
+                        False,
+                        f"Short exposure {new_short_exp:.1%} > limit {cfg.max_short_exposure_pct:.1%}",
+                    )
 
         # Cash check: only applies to longs (shorts use margin, not cash capital)
         if signal_direction == "BUY" and proposed_value > cash * 0.95:
             max_affordable = int(cash * 0.95 / max(entry_price, 0.01))
             if max_affordable < 1:
                 return RiskCheckResult(False, "Insufficient cash for long")
-            return RiskCheckResult(True, "Approved (cash-limited)",
-                                   adjusted_shares=max_affordable)
+            return RiskCheckResult(True, "Approved (cash-limited)", adjusted_shares=max_affordable)
 
         return RiskCheckResult(True, "Approved", adjusted_shares=proposed_shares)
 

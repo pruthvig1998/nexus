@@ -109,6 +109,15 @@ All config via `.env` file (see `.env.example`). Key vars:
 - `ANTHROPIC_API_KEY` — AI strategies (event calendar, AI fundamental)
 - `DISCORD_BOT_TOKEN` / `DISCORD_CHANNEL_IDS` — Discord feed
 - `TWITTER_ACCOUNTS` / `TWITTER_POLL_INTERVAL` / `NITTER_INSTANCES` — Twitter feed
+- `MOOMOO_HOST` / `MOOMOO_PORT` / `MOOMOO_TRADE_ENV` — Moomoo local gateway
+- `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` / `TELEGRAM_ENABLED` — Telegram alerts
+
+## Backtest Reports
+
+Backtest HTML reports are saved to `reports/nexus/backtest_YYYYMMDD.html`. Reports include:
+- Per-ticker Sharpe, CAGR, max drawdown, win rate
+- Long vs short trade breakdown
+- Portfolio-level aggregate metrics
 
 ## Testing
 

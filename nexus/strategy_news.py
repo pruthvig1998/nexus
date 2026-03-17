@@ -9,6 +9,7 @@ and detects:
 Headlines are queued via add_headline() and checked against tickers when analyze()
 is called by the engine.
 """
+
 from __future__ import annotations
 
 import re
@@ -52,8 +53,22 @@ for _tickers in SECTOR_MAP.values():
     _ALL_TICKERS.update(_tickers)
 
 # ETFs and indices commonly referenced in macro headlines
-_INDEX_TICKERS = {"SPY", "QQQ", "DIA", "IWM", "XLF", "XLE", "XLK", "XLV",
-                  "GLD", "SLV", "TLT", "VIX", "USO", "UNG"}
+_INDEX_TICKERS = {
+    "SPY",
+    "QQQ",
+    "DIA",
+    "IWM",
+    "XLF",
+    "XLE",
+    "XLK",
+    "XLV",
+    "GLD",
+    "SLV",
+    "TLT",
+    "VIX",
+    "USO",
+    "UNG",
+}
 _ALL_TICKERS.update(_INDEX_TICKERS)
 
 
@@ -64,46 +79,122 @@ MacroRule = Tuple[re.Pattern, List[str], str, float, str]
 
 _MACRO_RULES: List[MacroRule] = [
     # CPI / Inflation
-    (re.compile(r"cpi\s+(below|under|lower|miss|soft|cool)", re.I),
-     ["SPY", "QQQ"], "BUY", 0.70, "cpi_soft"),
-    (re.compile(r"inflation\s+(under\s+target|cool|deceler|fall)", re.I),
-     ["SPY", "QQQ"], "BUY", 0.70, "cpi_soft"),
-    (re.compile(r"cpi\s+(above|over|higher|beat|hot|surge)", re.I),
-     ["SPY", "QQQ"], "SELL", 0.70, "cpi_hot"),
-    (re.compile(r"inflation\s+(hot|accelerat|surge|spike|above)", re.I),
-     ["SPY", "QQQ"], "SELL", 0.70, "cpi_hot"),
-
+    (
+        re.compile(r"cpi\s+(below|under|lower|miss|soft|cool)", re.I),
+        ["SPY", "QQQ"],
+        "BUY",
+        0.70,
+        "cpi_soft",
+    ),
+    (
+        re.compile(r"inflation\s+(under\s+target|cool|deceler|fall)", re.I),
+        ["SPY", "QQQ"],
+        "BUY",
+        0.70,
+        "cpi_soft",
+    ),
+    (
+        re.compile(r"cpi\s+(above|over|higher|beat|hot|surge)", re.I),
+        ["SPY", "QQQ"],
+        "SELL",
+        0.70,
+        "cpi_hot",
+    ),
+    (
+        re.compile(r"inflation\s+(hot|accelerat|surge|spike|above)", re.I),
+        ["SPY", "QQQ"],
+        "SELL",
+        0.70,
+        "cpi_hot",
+    ),
     # Fed
-    (re.compile(r"(fed|fomc).{0,30}(rate\s+cut|cut\s+rate|dovish|easing)", re.I),
-     ["SOFI", "OPEN", "XLF", "SPY"], "BUY", 0.68, "fed_dovish"),
-    (re.compile(r"(fed|fomc).{0,30}(rate\s+hike|hike\s+rate|hawkish|tighten)", re.I),
-     ["SOFI", "OPEN", "XLF", "TLT"], "SELL", 0.68, "fed_hawkish"),
-
+    (
+        re.compile(r"(fed|fomc).{0,30}(rate\s+cut|cut\s+rate|dovish|easing)", re.I),
+        ["SOFI", "OPEN", "XLF", "SPY"],
+        "BUY",
+        0.68,
+        "fed_dovish",
+    ),
+    (
+        re.compile(r"(fed|fomc).{0,30}(rate\s+hike|hike\s+rate|hawkish|tighten)", re.I),
+        ["SOFI", "OPEN", "XLF", "TLT"],
+        "SELL",
+        0.68,
+        "fed_hawkish",
+    ),
     # NFP / Jobs
-    (re.compile(r"(nfp|non.?farm|payroll|jobs).{0,30}(beat|strong|surge|blowout)", re.I),
-     ["SPY"], "BUY", 0.65, "nfp_strong"),
-    (re.compile(r"(nfp|non.?farm|payroll|jobs).{0,30}(miss|weak|disappoint|soft)", re.I),
-     ["SPY"], "SELL", 0.65, "nfp_weak"),
-
+    (
+        re.compile(r"(nfp|non.?farm|payroll|jobs).{0,30}(beat|strong|surge|blowout)", re.I),
+        ["SPY"],
+        "BUY",
+        0.65,
+        "nfp_strong",
+    ),
+    (
+        re.compile(r"(nfp|non.?farm|payroll|jobs).{0,30}(miss|weak|disappoint|soft)", re.I),
+        ["SPY"],
+        "SELL",
+        0.65,
+        "nfp_weak",
+    ),
     # Trade / tariffs
-    (re.compile(r"(china|chinese).{0,40}(tariff|trade\s+war|retaliat|sanction|ban)", re.I),
-     ["AAPL", "NVDA", "TSM", "AVGO", "AMD", "QQQ"], "SELL", 0.65, "china_tariff"),
-    (re.compile(r"tariff.{0,30}(escalat|increas|new|raise|impose)", re.I),
-     ["SPY", "QQQ"], "SELL", 0.65, "tariff_escalation"),
-
+    (
+        re.compile(r"(china|chinese).{0,40}(tariff|trade\s+war|retaliat|sanction|ban)", re.I),
+        ["AAPL", "NVDA", "TSM", "AVGO", "AMD", "QQQ"],
+        "SELL",
+        0.65,
+        "china_tariff",
+    ),
+    (
+        re.compile(r"tariff.{0,30}(escalat|increas|new|raise|impose)", re.I),
+        ["SPY", "QQQ"],
+        "SELL",
+        0.65,
+        "tariff_escalation",
+    ),
     # Oil / OPEC
-    (re.compile(r"(opec|saudi).{0,30}(cut|reduc|curb|slash)\s*(production|output|supply)", re.I),
-     ["XLE", "XOM", "CVX", "COP", "SLB", "OXY", "USO"], "BUY", 0.65, "opec_cut"),
-    (re.compile(r"oil.{0,20}(spike|surge|rally|soar)", re.I),
-     ["XLE", "XOM", "CVX", "COP", "SLB", "OXY"], "BUY", 0.63, "oil_rally"),
-
+    (
+        re.compile(r"(opec|saudi).{0,30}(cut|reduc|curb|slash)\s*(production|output|supply)", re.I),
+        ["XLE", "XOM", "CVX", "COP", "SLB", "OXY", "USO"],
+        "BUY",
+        0.65,
+        "opec_cut",
+    ),
+    (
+        re.compile(r"oil.{0,20}(spike|surge|rally|soar)", re.I),
+        ["XLE", "XOM", "CVX", "COP", "SLB", "OXY"],
+        "BUY",
+        0.63,
+        "oil_rally",
+    ),
     # Geopolitical
-    (re.compile(r"(war|invasion|missile|strike|bomb|escalat).{0,30}(ukraine|russia|iran|israel|gaza|taiwan)", re.I),
-     ["LMT", "RTX", "NOC", "GD", "KTOS", "GLD"], "BUY", 0.60, "geopolitical"),
-    (re.compile(r"(ukraine|russia|iran|israel|gaza|taiwan).{0,30}(war|invasion|missile|strike|bomb|escalat)", re.I),
-     ["LMT", "RTX", "NOC", "GD", "KTOS", "GLD"], "BUY", 0.60, "geopolitical"),
-    (re.compile(r"(sanction|embargo).{0,30}(russia|iran|china)", re.I),
-     ["SPY"], "SELL", 0.60, "sanctions"),
+    (
+        re.compile(
+            r"(war|invasion|missile|strike|bomb|escalat).{0,30}(ukraine|russia|iran|israel|gaza|taiwan)",
+            re.I,
+        ),
+        ["LMT", "RTX", "NOC", "GD", "KTOS", "GLD"],
+        "BUY",
+        0.60,
+        "geopolitical",
+    ),
+    (
+        re.compile(
+            r"(ukraine|russia|iran|israel|gaza|taiwan).{0,30}(war|invasion|missile|strike|bomb|escalat)",
+            re.I,
+        ),
+        ["LMT", "RTX", "NOC", "GD", "KTOS", "GLD"],
+        "BUY",
+        0.60,
+        "geopolitical",
+    ),
+    (
+        re.compile(r"(sanction|embargo).{0,30}(russia|iran|china)", re.I),
+        ["SPY"],
+        "SELL",
+        0.60,
+        "sanctions",
+    ),
 ]
 
 
@@ -140,37 +231,141 @@ _BEARISH_PATTERNS = [
 
 _ROTATION_RULES = [
     # (pattern, buy_sectors, sell_sectors)
-    (re.compile(r"rotation\s+(into|toward)\s+(value|defensive|safe)", re.I),
-     ["healthcare", "energy"], ["tech", "ai_infra"]),
-    (re.compile(r"rotation\s+(into|toward)\s+(growth|tech|risk)", re.I),
-     ["tech", "ai_infra"], ["healthcare", "energy"]),
-    (re.compile(r"flight\s+to\s+(safety|quality)", re.I),
-     [], []),  # special case: buy GLD/TLT, sell equities
-    (re.compile(r"risk[\s-]?off", re.I),
-     [], []),  # special case: buy GLD/TLT, sell equities
-    (re.compile(r"risk[\s-]?on", re.I),
-     ["tech", "ai_infra", "fintech"], []),
+    (
+        re.compile(r"rotation\s+(into|toward)\s+(value|defensive|safe)", re.I),
+        ["healthcare", "energy"],
+        ["tech", "ai_infra"],
+    ),
+    (
+        re.compile(r"rotation\s+(into|toward)\s+(growth|tech|risk)", re.I),
+        ["tech", "ai_infra"],
+        ["healthcare", "energy"],
+    ),
+    (
+        re.compile(r"flight\s+to\s+(safety|quality)", re.I),
+        [],
+        [],
+    ),  # special case: buy GLD/TLT, sell equities
+    (re.compile(r"risk[\s-]?off", re.I), [], []),  # special case: buy GLD/TLT, sell equities
+    (re.compile(r"risk[\s-]?on", re.I), ["tech", "ai_infra", "fintech"], []),
 ]
 
 
 # ── Headline parser ─────────────────────────────────────────────────────────
 
 # Pattern to find tickers in headlines: $AAPL or (AAPL) or standalone AAPL
-_TICKER_RE = re.compile(r'(?:\$([A-Z]{1,5})|\b([A-Z]{2,5})\b)')
+_TICKER_RE = re.compile(r"(?:\$([A-Z]{1,5})|\b([A-Z]{2,5})\b)")
 
 # Common English words that look like tickers but are not
 _TICKER_BLACKLIST = {
-    "A", "I", "AM", "AN", "AS", "AT", "BE", "BY", "DO", "GO", "HE", "IF",
-    "IN", "IS", "IT", "ME", "MY", "NO", "OF", "OK", "ON", "OR", "SO", "TO",
-    "UP", "US", "WE", "CEO", "CFO", "CPI", "GDP", "IPO", "NFP", "SEC", "ETF",
-    "THE", "FOR", "AND", "BUT", "NOT", "ARE", "WAS", "HAS", "HAD", "NEW",
-    "NOW", "ALL", "CAN", "MAY", "SAY", "ITS", "OUT", "OUR", "WHO", "HOW",
-    "BIG", "OLD", "TOP", "LOW", "OIL", "CUT", "SET", "HIT", "WAR", "FED",
-    "GDP", "RED", "RUN", "PUT", "GET", "SAW", "TWO", "DAY", "KEY", "HIGH",
-    "JUST", "FROM", "THIS", "THAT", "WITH", "WILL", "HAVE", "BEEN", "SAYS",
-    "OVER", "INTO", "ALSO", "MORE", "MOST", "SOME", "THAN", "LIKE", "BACK",
-    "VERY", "MUCH", "NEAR", "NEXT", "LAST", "FULL", "DOWN", "RATE", "OPEC",
-    "FOMC", "DATA", "MISS", "BEAT", "LONG", "CALL", "SELL",
+    "A",
+    "I",
+    "AM",
+    "AN",
+    "AS",
+    "AT",
+    "BE",
+    "BY",
+    "DO",
+    "GO",
+    "HE",
+    "IF",
+    "IN",
+    "IS",
+    "IT",
+    "ME",
+    "MY",
+    "NO",
+    "OF",
+    "OK",
+    "ON",
+    "OR",
+    "SO",
+    "TO",
+    "UP",
+    "US",
+    "WE",
+    "CEO",
+    "CFO",
+    "CPI",
+    "GDP",
+    "IPO",
+    "NFP",
+    "SEC",
+    "ETF",
+    "THE",
+    "FOR",
+    "AND",
+    "BUT",
+    "NOT",
+    "ARE",
+    "WAS",
+    "HAS",
+    "HAD",
+    "NEW",
+    "NOW",
+    "ALL",
+    "CAN",
+    "MAY",
+    "SAY",
+    "ITS",
+    "OUT",
+    "OUR",
+    "WHO",
+    "HOW",
+    "BIG",
+    "OLD",
+    "TOP",
+    "LOW",
+    "OIL",
+    "CUT",
+    "SET",
+    "HIT",
+    "WAR",
+    "FED",
+    "RED",
+    "RUN",
+    "PUT",
+    "GET",
+    "SAW",
+    "TWO",
+    "DAY",
+    "KEY",
+    "HIGH",
+    "JUST",
+    "FROM",
+    "THIS",
+    "THAT",
+    "WITH",
+    "WILL",
+    "HAVE",
+    "BEEN",
+    "SAYS",
+    "OVER",
+    "INTO",
+    "ALSO",
+    "MORE",
+    "MOST",
+    "SOME",
+    "THAN",
+    "LIKE",
+    "BACK",
+    "VERY",
+    "MUCH",
+    "NEAR",
+    "NEXT",
+    "LAST",
+    "FULL",
+    "DOWN",
+    "RATE",
+    "OPEC",
+    "FOMC",
+    "DATA",
+    "MISS",
+    "BEAT",
+    "LONG",
+    "CALL",
+    "SELL",
 }
 
 
@@ -191,6 +386,7 @@ def _extract_tickers(text: str) -> List[str]:
 
 # ── NewsSentimentStrategy ────────────────────────────────────────────────────
 
+
 class NewsSentimentStrategy:
     """Analyze queued news headlines and generate signals for affected tickers.
 
@@ -199,6 +395,7 @@ class NewsSentimentStrategy:
         strategy.add_headline("CPI comes in below estimates", source="zerohedge")
         signal = await strategy.analyze("SPY", df)
     """
+
     name = "news_sentiment"
 
     def __init__(self) -> None:
@@ -234,9 +431,13 @@ class NewsSentimentStrategy:
             "parsed": parsed,
         }
         self._headlines.append(entry)
-        log.debug("headline queued", source=source, tickers=parsed["tickers"],
-                  sentiment=f"{parsed['sentiment']:+.2f}",
-                  event_type=parsed["event_type"])
+        log.debug(
+            "headline queued",
+            source=source,
+            tickers=parsed["tickers"],
+            sentiment=f"{parsed['sentiment']:+.2f}",
+            event_type=parsed["event_type"],
+        )
 
     async def analyze(self, ticker: str, df: pd.DataFrame) -> Optional[Signal]:
         """Check if any recent headlines affect this ticker and produce a signal.
@@ -266,7 +467,11 @@ class NewsSentimentStrategy:
             text = entry["text"]
 
             signal = self._evaluate_headline(
-                ticker, ticker_sectors, text, parsed, df,
+                ticker,
+                ticker_sectors,
+                text,
+                parsed,
+                df,
             )
             if signal and signal.score > best_score:
                 best_signal = signal
@@ -309,7 +514,9 @@ class NewsSentimentStrategy:
                 for s in sell_sectors:
                     rotation_tickers.extend(SECTOR_MAP.get(s, []))
                 rotation_tickers = list(dict.fromkeys(rotation_tickers))
-                sector = buy_sectors[0] if buy_sectors else (sell_sectors[0] if sell_sectors else "")
+                sector = (
+                    buy_sectors[0] if buy_sectors else (sell_sectors[0] if sell_sectors else "")
+                )
                 # Net sentiment depends on whether it is risk-on or risk-off
                 sentiment = 0.5 if buy_sectors else -0.5
                 return {
@@ -326,7 +533,11 @@ class NewsSentimentStrategy:
         if bullish_hits or bearish_hits:
             net = bullish_hits - bearish_hits
             sentiment = max(-1.0, min(1.0, net * 0.4))
-            event_type = "company_bullish" if net > 0 else ("company_bearish" if net < 0 else "company_mixed")
+            event_type = (
+                "company_bullish"
+                if net > 0
+                else ("company_bearish" if net < 0 else "company_mixed")
+            )
         else:
             sentiment = 0.0
             event_type = "neutral"
@@ -377,7 +588,9 @@ class NewsSentimentStrategy:
             return self._check_rotation(ticker, ticker_sectors, text, df)
 
         # ── Flight to safety special case ────────────────────────────────────
-        if event_type == "sector_rotation" or re.search(r"flight\s+to\s+(safety|quality)|risk[\s-]?off", text, re.I):
+        if event_type == "sector_rotation" or re.search(
+            r"flight\s+to\s+(safety|quality)|risk[\s-]?off", text, re.I
+        ):
             if ticker in ("GLD", "TLT", "SLV"):
                 return self._build_signal(ticker, 0.60, "flight_to_safety", text, df)
             if ticker in ("SPY", "QQQ", "IWM"):

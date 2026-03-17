@@ -19,6 +19,7 @@ v3.1 improvements:
   - Structured logging with context fields throughout
   - Full type hints
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -35,29 +36,177 @@ log = get_logger("discord_feed")
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 COMMON_WORDS: set[str] = {
-    "A", "AM", "AN", "AS", "AT", "BE", "BY", "DO", "GO", "HE", "HI",
-    "I", "IF", "IN", "IS", "IT", "ME", "MY", "NO", "OF", "OK", "ON",
-    "OR", "PM", "RE", "SO", "TO", "UP", "US", "WE",
+    "A",
+    "AM",
+    "AN",
+    "AS",
+    "AT",
+    "BE",
+    "BY",
+    "DO",
+    "GO",
+    "HE",
+    "HI",
+    "I",
+    "IF",
+    "IN",
+    "IS",
+    "IT",
+    "ME",
+    "MY",
+    "NO",
+    "OF",
+    "OK",
+    "ON",
+    "OR",
+    "PM",
+    "RE",
+    "SO",
+    "TO",
+    "UP",
+    "US",
+    "WE",
     # Common 3-letter words that look like tickers
-    "ALL", "AND", "ARE", "BIG", "BUT", "CAN", "CEO", "DAY", "DID",
-    "EPS", "ETF", "FOR", "GET", "GOT", "HAS", "HIS", "HOW", "IMO",
-    "ITS", "LET", "LOL", "MAY", "MOM", "NEW", "NOT", "NOW", "OLD",
-    "ONE", "OUR", "OUT", "OWN", "RUN", "SAY", "SEC", "SET", "SHE",
-    "THE", "TOP", "TRY", "TWO", "USE", "WAY", "WHO", "WHY", "WIN",
-    "YES", "YET", "YOU",
+    "ALL",
+    "AND",
+    "ARE",
+    "BIG",
+    "BUT",
+    "CAN",
+    "CEO",
+    "DAY",
+    "DID",
+    "EPS",
+    "ETF",
+    "FOR",
+    "GET",
+    "GOT",
+    "HAS",
+    "HIS",
+    "HOW",
+    "IMO",
+    "ITS",
+    "LET",
+    "LOL",
+    "MAY",
+    "MOM",
+    "NEW",
+    "NOT",
+    "NOW",
+    "OLD",
+    "ONE",
+    "OUR",
+    "OUT",
+    "OWN",
+    "RUN",
+    "SAY",
+    "SEC",
+    "SET",
+    "SHE",
+    "THE",
+    "TOP",
+    "TRY",
+    "TWO",
+    "USE",
+    "WAY",
+    "WHO",
+    "WHY",
+    "WIN",
+    "YES",
+    "YET",
+    "YOU",
     # Common 4-letter words
-    "BEEN", "BEST", "CALL", "CASH", "DEBT", "DOES", "DONE", "DOWN",
-    "DROP", "EACH", "EDIT", "EVEN", "ELON", "FAST", "FROM", "GAIN",
-    "GOOD", "GROW", "HALF", "HAVE", "HERE", "HIGH", "HOLD", "HOPE",
-    "INTO", "JUST", "KEEP", "KNOW", "LAST", "LIKE", "LONG", "LOOK",
-    "LOSS", "LOTS", "LOVE", "MADE", "MAKE", "MANY", "MORE", "MUCH",
-    "MUST", "NEAR", "NEED", "NEWS", "NEXT", "NICE", "ONCE", "ONLY",
-    "OVER", "PAID", "PEAK", "PLAY", "PULL", "PUSH", "PUTS", "REAL",
-    "RISK", "SAFE", "SAME", "SELL", "SEEN", "SEND", "SENT", "SOME",
-    "STOP", "SURE", "TAKE", "TALK", "THAT", "THEM", "THEN", "THEY",
-    "THIS", "TIME", "TOLD", "TOOK", "TURN", "VERY", "WAIT", "WANT",
-    "WENT", "WERE", "WHAT", "WHEN", "WILL", "WITH", "WORK", "YEAH",
-    "YEAR", "YOUR", "ZERO",
+    "BEEN",
+    "BEST",
+    "CALL",
+    "CASH",
+    "DEBT",
+    "DOES",
+    "DONE",
+    "DOWN",
+    "DROP",
+    "EACH",
+    "EDIT",
+    "EVEN",
+    "ELON",
+    "FAST",
+    "FROM",
+    "GAIN",
+    "GOOD",
+    "GROW",
+    "HALF",
+    "HAVE",
+    "HERE",
+    "HIGH",
+    "HOLD",
+    "HOPE",
+    "INTO",
+    "JUST",
+    "KEEP",
+    "KNOW",
+    "LAST",
+    "LIKE",
+    "LONG",
+    "LOOK",
+    "LOSS",
+    "LOTS",
+    "LOVE",
+    "MADE",
+    "MAKE",
+    "MANY",
+    "MORE",
+    "MUCH",
+    "MUST",
+    "NEAR",
+    "NEED",
+    "NEWS",
+    "NEXT",
+    "NICE",
+    "ONCE",
+    "ONLY",
+    "OVER",
+    "PAID",
+    "PEAK",
+    "PLAY",
+    "PULL",
+    "PUSH",
+    "PUTS",
+    "REAL",
+    "RISK",
+    "SAFE",
+    "SAME",
+    "SELL",
+    "SEEN",
+    "SEND",
+    "SENT",
+    "SOME",
+    "STOP",
+    "SURE",
+    "TAKE",
+    "TALK",
+    "THAT",
+    "THEM",
+    "THEN",
+    "THEY",
+    "THIS",
+    "TIME",
+    "TOLD",
+    "TOOK",
+    "TURN",
+    "VERY",
+    "WAIT",
+    "WANT",
+    "WENT",
+    "WERE",
+    "WHAT",
+    "WHEN",
+    "WILL",
+    "WITH",
+    "WORK",
+    "YEAH",
+    "YEAR",
+    "YOUR",
+    "ZERO",
 }
 
 _TICKER_EXPLICIT = re.compile(r"\$([A-Z]{1,5})\b")
@@ -70,74 +219,74 @@ _PRICE_NEAR = re.compile(r"\$\d+(?:\.\d+)?")
 # Weak keywords (weight 1.0) are suggestive but context-dependent.
 _BUY_KEYWORDS: Dict[str, float] = {
     # Strong (2.0)
-    "buy":        2.0,
-    "bought":     2.0,
-    "buying":     2.0,
-    "long":       2.0,
-    "calls":      2.0,
-    "call":       1.5,
-    "bid":        1.5,
+    "buy": 2.0,
+    "bought": 2.0,
+    "buying": 2.0,
+    "long": 2.0,
+    "calls": 2.0,
+    "call": 1.5,
+    "bid": 1.5,
     # Medium (1.5)
-    "bullish":    1.5,
-    "breakout":   1.5,
+    "bullish": 1.5,
+    "breakout": 1.5,
     "accumulate": 1.5,
-    "loading":    1.5,
-    "added":      1.5,
-    "adding":     1.5,
-    "entry":      1.5,
-    "upgrade":    1.5,
-    "upgraded":   1.5,
-    "upside":     1.5,
-    "rally":      1.5,
+    "loading": 1.5,
+    "added": 1.5,
+    "adding": 1.5,
+    "entry": 1.5,
+    "upgrade": 1.5,
+    "upgraded": 1.5,
+    "upside": 1.5,
+    "rally": 1.5,
     # Weak (1.0)
-    "moon":       1.0,
-    "rocket":     1.0,
-    "dip":        1.0,
-    "oversold":   1.0,
+    "moon": 1.0,
+    "rocket": 1.0,
+    "dip": 1.0,
+    "oversold": 1.0,
     "undervalued": 1.0,
-    "bottom":     1.0,
-    "bounce":     1.0,
-    "green":      1.0,
-    "rip":        1.0,
-    "squeeze":    1.0,
-    "send":       1.0,
+    "bottom": 1.0,
+    "bounce": 1.0,
+    "green": 1.0,
+    "rip": 1.0,
+    "squeeze": 1.0,
+    "send": 1.0,
 }
 
 _SELL_KEYWORDS: Dict[str, float] = {
     # Strong (2.0)
-    "sell":       2.0,
-    "sold":       2.0,
-    "selling":    2.0,
-    "short":      2.0,
-    "puts":       2.0,
-    "put":        1.5,
+    "sell": 2.0,
+    "sold": 2.0,
+    "selling": 2.0,
+    "short": 2.0,
+    "puts": 2.0,
+    "put": 1.5,
     # Medium (1.5)
-    "bearish":    1.5,
-    "breakdown":  1.5,
-    "dumping":    1.5,
-    "dump":       1.5,
-    "exit":       1.5,
-    "exiting":    1.5,
-    "downgrade":  1.5,
+    "bearish": 1.5,
+    "breakdown": 1.5,
+    "dumping": 1.5,
+    "dump": 1.5,
+    "exit": 1.5,
+    "exiting": 1.5,
+    "downgrade": 1.5,
     "downgraded": 1.5,
-    "downside":   1.5,
-    "trimming":   1.5,
-    "trim":       1.5,
-    "cut":        1.5,
+    "downside": 1.5,
+    "trimming": 1.5,
+    "trim": 1.5,
+    "cut": 1.5,
     # Weak (1.0)
-    "crash":      1.0,
-    "tank":       1.0,
-    "tanking":    1.0,
+    "crash": 1.0,
+    "tank": 1.0,
+    "tanking": 1.0,
     "overvalued": 1.0,
     "overbought": 1.0,
-    "fade":       1.0,
-    "fading":     1.0,
-    "red":        1.0,
-    "drop":       1.0,
-    "falling":    1.0,
-    "drill":      1.0,
-    "rug":        1.0,
-    "baghold":    1.0,
+    "fade": 1.0,
+    "fading": 1.0,
+    "red": 1.0,
+    "drop": 1.0,
+    "falling": 1.0,
+    "drill": 1.0,
+    "rug": 1.0,
+    "baghold": 1.0,
 }
 
 _CONTEXT_WINDOW: int = 60  # characters around a ticker mention to search
@@ -151,6 +300,7 @@ _LLM_VALID_DIRECTIONS: set[str] = {"BUY", "SELL", "HOLD"}
 
 
 # ── Parser (module-level for easy unit testing) ───────────────────────────────
+
 
 def _parse_message(
     content: str,
@@ -230,10 +380,14 @@ def _parse_message(
         ticker_pos_in_ctx = pos - lo
 
         buy_score = _compute_direction_score(
-            ctx, ticker_pos_in_ctx, _BUY_KEYWORDS,
+            ctx,
+            ticker_pos_in_ctx,
+            _BUY_KEYWORDS,
         )
         sell_score = _compute_direction_score(
-            ctx, ticker_pos_in_ctx, _SELL_KEYWORDS,
+            ctx,
+            ticker_pos_in_ctx,
+            _SELL_KEYWORDS,
         )
 
         if buy_score == 0.0 and sell_score == 0.0:
@@ -316,6 +470,7 @@ def _compute_direction_score(
 
 # ── DiscordFeed class ─────────────────────────────────────────────────────────
 
+
 class DiscordFeed:
     """Connects to Discord as a bot, monitors channels, and emits Signal objects.
 
@@ -328,8 +483,12 @@ class DiscordFeed:
         stats: Read-only dict of operational counters.
     """
 
-    def __init__(self, config: DiscordConfig, signal_queue: asyncio.Queue,  # type: ignore[type-arg]
-                 news_strategy=None) -> None:
+    def __init__(
+        self,
+        config: DiscordConfig,
+        signal_queue: asyncio.Queue,  # type: ignore[type-arg]
+        news_strategy=None,
+    ) -> None:
         try:
             import discord  # type: ignore[import]
         except ImportError as exc:
@@ -393,8 +552,7 @@ class DiscordFeed:
         """On startup, backfill recent messages from configured channels."""
         for guild in self._client.guilds:
             for channel in guild.text_channels:
-                if (self._cfg.channel_ids
-                        and channel.id not in self._cfg.channel_ids):
+                if self._cfg.channel_ids and channel.id not in self._cfg.channel_ids:
                     continue
                 try:
                     count: int = 0
@@ -427,8 +585,7 @@ class DiscordFeed:
         self._seen_ids.add(message.id)
 
         # Channel filter
-        if (self._cfg.channel_ids
-                and message.channel.id not in self._cfg.channel_ids):
+        if self._cfg.channel_ids and message.channel.id not in self._cfg.channel_ids:
             return
 
         content: str = getattr(message, "content", "") or ""
@@ -458,15 +615,15 @@ class DiscordFeed:
             signals = await self._llm_confirm(content, signals)
 
         # Extract headlines from embeds (TweetShift bot feeds)
-        embeds = getattr(message, 'embeds', []) or []
+        embeds = getattr(message, "embeds", []) or []
         for embed in embeds:
-            headline = getattr(embed, 'description', '') or getattr(embed, 'title', '') or ''
-            if headline and self._news_strategy and hasattr(self._news_strategy, 'add_headline'):
-                source = getattr(getattr(embed, 'author', None), 'name', '') or ''
+            headline = getattr(embed, "description", "") or getattr(embed, "title", "") or ""
+            if headline and self._news_strategy and hasattr(self._news_strategy, "add_headline"):
+                source = getattr(getattr(embed, "author", None), "name", "") or ""
                 self._news_strategy.add_headline(
                     text=headline,
                     source=source,
-                    timestamp=str(message.created_at) if hasattr(message, 'created_at') else '',
+                    timestamp=str(message.created_at) if hasattr(message, "created_at") else "",
                 )
 
         for sig in signals:
@@ -492,7 +649,9 @@ class DiscordFeed:
                 )
 
     async def _llm_confirm(
-        self, content: str, signals: List[Signal],
+        self,
+        content: str,
+        signals: List[Signal],
     ) -> List[Signal]:
         """Use Claude to confirm/boost signal confidence.
 
@@ -523,6 +682,7 @@ class DiscordFeed:
                 "Return ONLY the JSON array, no markdown, no explanation."
             )
             from nexus.config import get_config
+
             resp = await client.messages.create(
                 model=get_config().ai_model,
                 max_tokens=256,

@@ -1,4 +1,5 @@
 """NEXUS v3 CLI."""
+
 from __future__ import annotations
 
 import asyncio
@@ -17,9 +18,16 @@ def cli():
 
 # ── backtest ──────────────────────────────────────────────────────────────────
 
+
 @cli.command()
-@click.option("-t", "--ticker", "tickers", multiple=True,
-              default=["AAPL", "MSFT", "NVDA", "GOOGL"], show_default=True)
+@click.option(
+    "-t",
+    "--ticker",
+    "tickers",
+    multiple=True,
+    default=["AAPL", "MSFT", "NVDA", "GOOGL"],
+    show_default=True,
+)
 @click.option("-y", "--years", default=2.0, show_default=True)
 @click.option("--capital", default=100_000.0, show_default=True)
 @click.option("-o", "--output", default=None)
@@ -27,14 +35,17 @@ def cli():
 def backtest(tickers, years, capital, output, log_level):
     """Run long/short backtest on historical data and generate HTML report."""
     from nexus.logger import setup_logging
+
     setup_logging(log_level)
     from nexus.backtest import generate_report, run_backtest
 
     if not output:
         output = f"reports/nexus/backtest_{datetime.now():%Y%m%d}.html"
 
-    click.echo(f"Backtesting {list(tickers)} over {years:.1f} years "
-               f"(${capital:,.0f} starting capital) — LONG/SHORT\n")
+    click.echo(
+        f"Backtesting {list(tickers)} over {years:.1f} years "
+        f"(${capital:,.0f} starting capital) — LONG/SHORT\n"
+    )
 
     async def _run():
         summary = await run_backtest(list(tickers), years, capital)
@@ -45,25 +56,39 @@ def backtest(tickers, years, capital, output, log_level):
         click.echo("═" * 62)
         click.echo(f"  Tickers:          {', '.join(summary.tickers)}")
         click.echo(f"  Period:           {years:.1f} years")
-        click.echo(f"  Total Trades:     {summary.total_trades} "
-                   f"({summary.long_trades} long / {summary.short_trades} short)")
+        click.echo(
+            f"  Total Trades:     {summary.total_trades} "
+            f"({summary.long_trades} long / {summary.short_trades} short)"
+        )
         click.echo()
         s_pass = summary.portfolio_sharpe >= 1.0
         d_pass = summary.portfolio_max_dd < 20
         c_pass = summary.portfolio_cagr > 0
         sh_pass = summary.short_trades > 0
-        click.echo(f"  Sharpe:    {summary.portfolio_sharpe:>6.2f}   {'✓ PASS' if s_pass else '✗ FAIL'}  (target >1.0)")
-        click.echo(f"  CAGR:      {summary.portfolio_cagr:>5.1f}%   {'✓ PASS' if c_pass else '✗ FAIL'}  (target >0%)")
-        click.echo(f"  Max DD:    {summary.portfolio_max_dd:>5.1f}%   {'✓ PASS' if d_pass else '✗ FAIL'}  (target <20%)")
+        click.echo(
+            f"  Sharpe:    {summary.portfolio_sharpe:>6.2f}   {'✓ PASS' if s_pass else '✗ FAIL'}  (target >1.0)"
+        )
+        click.echo(
+            f"  CAGR:      {summary.portfolio_cagr:>5.1f}%   {'✓ PASS' if c_pass else '✗ FAIL'}  (target >0%)"
+        )
+        click.echo(
+            f"  Max DD:    {summary.portfolio_max_dd:>5.1f}%   {'✓ PASS' if d_pass else '✗ FAIL'}  (target <20%)"
+        )
         click.echo(f"  Win Rate:  {summary.portfolio_win_rate:>5.0%}")
-        click.echo(f"  Shorts:    {summary.short_trades:>6}    {'✓ PASS' if sh_pass else '✗ FAIL'}  (target >0)")
+        click.echo(
+            f"  Shorts:    {summary.short_trades:>6}    {'✓ PASS' if sh_pass else '✗ FAIL'}  (target >0)"
+        )
         click.echo()
-        click.echo(f"  {'Ticker':<7} {'Sharpe':>7} {'CAGR':>7} {'MaxDD':>6} {'WinRate':>8} {'L':>5} {'S':>5}")
-        click.echo(f"  {'-'*55}")
+        click.echo(
+            f"  {'Ticker':<7} {'Sharpe':>7} {'CAGR':>7} {'MaxDD':>6} {'WinRate':>8} {'L':>5} {'S':>5}"
+        )
+        click.echo(f"  {'-' * 55}")
         for r in summary.results:
-            click.echo(f"  {r.ticker:<7} {r.sharpe:>7.2f} {r.cagr_pct:>6.1f}% "
-                       f"{r.max_drawdown_pct:>5.1f}% {r.win_rate:>8.0%} "
-                       f"{r.long_trades:>5} {r.short_trades:>5}")
+            click.echo(
+                f"  {r.ticker:<7} {r.sharpe:>7.2f} {r.cagr_pct:>6.1f}% "
+                f"{r.max_drawdown_pct:>5.1f}% {r.win_rate:>8.0%} "
+                f"{r.long_trades:>5} {r.short_trades:>5}"
+            )
         click.echo()
         click.echo(f"  Report → {path}")
         click.echo("═" * 62)
@@ -74,22 +99,60 @@ def backtest(tickers, years, capital, output, log_level):
 
 # ── run ───────────────────────────────────────────────────────────────────────
 
+
 @cli.command()
 @click.option("--paper/--live", default=True, show_default=True)
-@click.option("-b", "--broker", "broker_name", default="alpaca",
-              type=click.Choice(["alpaca", "moomoo", "ibkr", "webull"], case_sensitive=False),
-              show_default=True, help="Broker to trade with")
+@click.option(
+    "-b",
+    "--broker",
+    "broker_name",
+    default="alpaca",
+    type=click.Choice(["alpaca", "moomoo", "ibkr", "webull"], case_sensitive=False),
+    show_default=True,
+    help="Broker to trade with",
+)
 @click.option("-t", "--ticker", "tickers", multiple=True)
 @click.option("--no-dashboard", is_flag=True)
 @click.option("--scan-interval", default=60, show_default=True)
 @click.option("--log-level", default="INFO", show_default=True)
-@click.option("--discord", "use_discord", is_flag=True, default=False,
-              help="Enable Discord channel monitoring for signals")
-@click.option("--twitter", "use_twitter", is_flag=True, default=False,
-              help="Enable Twitter/Nitter RSS feed monitoring for signals")
-def run(paper, broker_name, tickers, no_dashboard, scan_interval, log_level, use_discord, use_twitter):
+@click.option(
+    "--discord",
+    "use_discord",
+    is_flag=True,
+    default=False,
+    help="Enable Discord channel monitoring for signals",
+)
+@click.option(
+    "--twitter",
+    "use_twitter",
+    is_flag=True,
+    default=False,
+    help="Enable Twitter/Nitter RSS feed monitoring for signals",
+)
+@click.option(
+    "--telegram", "use_telegram", is_flag=True, default=False, help="Enable Telegram trade alerts"
+)
+@click.option(
+    "--flatten-on-exit",
+    is_flag=True,
+    default=False,
+    help="Close all positions before shutting down",
+)
+def run(
+    paper,
+    broker_name,
+    tickers,
+    no_dashboard,
+    scan_interval,
+    log_level,
+    use_discord,
+    use_twitter,
+    use_telegram,
+    flatten_on_exit,
+):
     """Start the live long/short trading engine with Rich dashboard."""
     from nexus.logger import setup_logging
+
     setup_logging(log_level)
     from nexus.config import NEXUSConfig, set_config
 
@@ -99,16 +162,25 @@ def run(paper, broker_name, tickers, no_dashboard, scan_interval, log_level, use
             abort=True,
         )
 
-    cfg = NEXUSConfig(paper=paper, active_broker=broker_name,
-                      scan_interval=scan_interval, log_level=log_level)
+    cfg = NEXUSConfig(
+        paper=paper, active_broker=broker_name, scan_interval=scan_interval, log_level=log_level
+    )
     if tickers:
         cfg.watchlist = list(tickers)
+
+    try:
+        cfg.validate()
+    except ValueError as e:
+        click.echo(f"\n  Configuration error:\n  {e}\n", err=True)
+        raise SystemExit(1)
+
     set_config(cfg)
 
     # Instantiate the selected broker
     def _make_broker():
         if broker_name == "moomoo":
             from nexus.broker_moomoo import MoomooBroker, MoomooTrdEnv
+
             trade_env = MoomooTrdEnv.SIMULATE if paper else MoomooTrdEnv.REAL
             return MoomooBroker(
                 host=cfg.moomoo.host,
@@ -117,12 +189,15 @@ def run(paper, broker_name, tickers, no_dashboard, scan_interval, log_level, use
             )
         elif broker_name == "ibkr":
             from nexus.broker_ibkr import IBKRBroker
+
             return IBKRBroker()
         elif broker_name == "webull":
             from nexus.broker_webull import WebullBroker
+
             return WebullBroker()
         else:
             from nexus.broker import AlpacaBroker
+
             return AlpacaBroker(cfg.alpaca)
 
     broker = _make_broker()
@@ -135,20 +210,21 @@ def run(paper, broker_name, tickers, no_dashboard, scan_interval, log_level, use
         from nexus.dashboard import NEXUSDashboard
         from nexus.engine import NEXUSEngine
 
-        engine = NEXUSEngine(config=cfg, broker=broker)
+        engine = NEXUSEngine(config=cfg, broker=broker, flatten_on_exit=flatten_on_exit)
 
         tasks = [engine.start()]
         if not no_dashboard:
-            dash = NEXUSDashboard(engine.tracker, paper=paper,
-                                  event_bus=engine.event_bus)
+            dash = NEXUSDashboard(engine.tracker, paper=paper, event_bus=engine.event_bus)
             tasks.append(dash.run())
         else:
             dash = None
 
         if use_discord:
             from nexus.discord_feed import DiscordFeed
-            feed = DiscordFeed(cfg.discord, engine.get_signal_queue(),
-                               news_strategy=engine.news_strategy)
+
+            feed = DiscordFeed(
+                cfg.discord, engine.get_signal_queue(), news_strategy=engine.news_strategy
+            )
             tasks.append(feed.start())
             click.echo("Discord feed enabled — monitoring configured channels")
         else:
@@ -156,12 +232,23 @@ def run(paper, broker_name, tickers, no_dashboard, scan_interval, log_level, use
 
         if use_twitter:
             from nexus.twitter_feed import TwitterFeed
-            twitter_feed = TwitterFeed(cfg.twitter, engine.get_signal_queue(),
-                                       news_strategy=engine.news_strategy)
+
+            twitter_feed = TwitterFeed(
+                cfg.twitter, engine.get_signal_queue(), news_strategy=engine.news_strategy
+            )
             tasks.append(twitter_feed.start())
             click.echo("Twitter feed enabled — monitoring via Nitter RSS")
         else:
             twitter_feed = None
+
+        if use_telegram or cfg.telegram.enabled:
+            from nexus.alerter import TelegramAlerter
+
+            alerter = TelegramAlerter(cfg.telegram, engine.event_bus)
+            tasks.append(alerter.start())
+            click.echo("Telegram alerter enabled — sending trade notifications")
+        else:
+            alerter = None
 
         try:
             await asyncio.gather(*tasks)
@@ -175,6 +262,8 @@ def run(paper, broker_name, tickers, no_dashboard, scan_interval, log_level, use
                 await feed.stop()
             if twitter_feed:
                 await twitter_feed.stop()
+            if alerter:
+                await alerter.stop()
 
     try:
         asyncio.run(_run())
@@ -184,11 +273,13 @@ def run(paper, broker_name, tickers, no_dashboard, scan_interval, log_level, use
 
 # ── status ────────────────────────────────────────────────────────────────────
 
+
 @cli.command()
 @click.option("--db", default="nexus.db", show_default=True)
 def status(db):
     """Show portfolio status with long/short breakdown."""
     from nexus.tracker import PortfolioTracker
+
     t = PortfolioTracker(db)
     stats = t.compute_stats()
     pnl, trades = t.get_today_pnl()
@@ -211,8 +302,10 @@ def status(db):
         for tr in open_t:
             side = tr.get("side", "LONG")
             arrow = "▲" if side == "LONG" else "▼"
-            click.echo(f"    {arrow} {side:5} {tr['shares']:5.0f}×{tr['ticker']:<6} "
-                       f"@ ${tr['entry_price']:.2f}  stop=${tr['stop_price']:.2f}")
+            click.echo(
+                f"    {arrow} {side:5} {tr['shares']:5.0f}×{tr['ticker']:<6} "
+                f"@ ${tr['entry_price']:.2f}  stop=${tr['stop_price']:.2f}"
+            )
     if closed:
         click.echo("\n  Recent Closed:")
         for tr in closed:
@@ -223,37 +316,52 @@ def status(db):
 
 # ── signals ───────────────────────────────────────────────────────────────────
 
+
 @cli.command()
 @click.option("--db", default="nexus.db", show_default=True)
 @click.option("--limit", default=20, show_default=True)
 def signals(db, limit):
     """Show recent trading signals."""
     from nexus.tracker import PortfolioTracker
+
     t = PortfolioTracker(db)
     sigs = t.get_recent_signals(limit)
-    click.echo(f"\n  {'Time':<20} {'Ticker':<7} {'Dir':<6} {'Score':>6}  {'Strategy':<15}  Reasoning")
+    click.echo(
+        f"\n  {'Time':<20} {'Ticker':<7} {'Dir':<6} {'Score':>6}  {'Strategy':<15}  Reasoning"
+    )
     click.echo("  " + "─" * 85)
     for s in sigs:
         ts = (s.get("ts") or "")[:19].replace("T", " ")
-        click.echo(f"  {ts:<20} {s.get('ticker', ''):<7} {s.get('direction', ''):<6} "
-                   f"{s.get('score', 0):>6.2f}  {s.get('strategy', ''):<15}  "
-                   f"{(s.get('reasoning') or '')[:40]}")
+        click.echo(
+            f"  {ts:<20} {s.get('ticker', ''):<7} {s.get('direction', ''):<6} "
+            f"{s.get('score', 0):>6.2f}  {s.get('strategy', ''):<15}  "
+            f"{(s.get('reasoning') or '')[:40]}"
+        )
 
 
 # ── load-discord ───────────────────────────────────────────────────────────────
 
+
 @cli.command("load-discord")
 @click.argument("path", default="~/Desktop/discord-exports/")
-@click.option("--min-score", default=0.55, show_default=True,
-              help="Minimum signal score to include (0.0–1.0)")
-@click.option("--db", default="nexus.db", show_default=True,
-              help="SQLite database to log signals into")
-@click.option("--no-db", is_flag=True, default=False,
-              help="Parse and display signals without writing to DB")
-@click.option("--show-signals", is_flag=True, default=False,
-              help="Print individual signal details after summary")
-@click.option("--limit", default=50, show_default=True,
-              help="Max signals to show with --show-signals")
+@click.option(
+    "--min-score", default=0.55, show_default=True, help="Minimum signal score to include (0.0–1.0)"
+)
+@click.option(
+    "--db", default="nexus.db", show_default=True, help="SQLite database to log signals into"
+)
+@click.option(
+    "--no-db", is_flag=True, default=False, help="Parse and display signals without writing to DB"
+)
+@click.option(
+    "--show-signals",
+    is_flag=True,
+    default=False,
+    help="Print individual signal details after summary",
+)
+@click.option(
+    "--limit", default=50, show_default=True, help="Max signals to show with --show-signals"
+)
 @click.option("--log-level", default="WARNING", show_default=True)
 def load_discord(path, min_score, db, no_db, show_signals, limit, log_level):
     """Load DiscordChatExporter JSON exports and extract trading signals.
@@ -267,6 +375,7 @@ def load_discord(path, min_score, db, no_db, show_signals, limit, log_level):
       nexus load-discord ~/Desktop/discord-exports/ --min-score 0.60 --no-db
     """
     from nexus.logger import setup_logging
+
     setup_logging(log_level)
     from nexus.discord_loader import DiscordLoader
 
@@ -287,8 +396,10 @@ def load_discord(path, min_score, db, no_db, show_signals, limit, log_level):
         loader.print_signals(summary, limit=limit)
 
     if summary.signals_found == 0:
-        click.echo("  No trading signals found. Try lowering --min-score or check "
-                   "that the export contains trading-related messages.\n")
+        click.echo(
+            "  No trading signals found. Try lowering --min-score or check "
+            "that the export contains trading-related messages.\n"
+        )
 
 
 if __name__ == "__main__":

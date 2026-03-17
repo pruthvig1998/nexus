@@ -3,13 +3,12 @@
 Tests cover RSS XML parsing, tweet-to-signal conversion, dedup logic,
 instance health fallback, and aiohttp fetch with mocking.
 """
+
 from __future__ import annotations
 
 import asyncio
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from nexus.config import TwitterConfig
 from nexus.twitter_feed import TwitterFeed, _parse_rss, _parse_tweet
@@ -271,6 +270,7 @@ class TestInstanceFallback:
 
 class _MockResponse:
     """Lightweight mock for aiohttp response used in async context manager."""
+
     def __init__(self, status: int, text: str):
         self.status = status
         self._text = text
@@ -281,6 +281,7 @@ class _MockResponse:
 
 class _MockContextManager:
     """Mock async context manager for session.get()."""
+
     def __init__(self, response):
         self._response = response
 

@@ -23,7 +23,9 @@ dependencies = [
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
+    "pytest-cov>=5.0.0",
     "ruff>=0.3.0",
+    "pre-commit>=3.7.0",
 ]
 ibkr = [
     "ib_insync>=0.9.86",
@@ -55,8 +57,34 @@ line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "I"]
-ignore = ["E501"]
+select = ["E", "F", "I", "B", "S", "UP", "RUF"]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "S101",   # assert in tests
+    "S106",   # hardcoded passwords (test fixtures)
+    "S110",   # try-except-pass
+    "S311",   # random (used for jitter)
+    "S314",   # XML parsing (twitter_feed uses stdlib xml)
+    "B007",   # unused loop variable
+    "B008",   # function call in default arg (click decorators)
+    "B905",   # zip without strict=
+    "UP006",  # List -> list (codebase uses typing.List)
+    "UP007",  # Optional -> X | None
+    "UP015",  # unnecessary open mode
+    "UP017",  # datetime.UTC alias
+    "UP035",  # deprecated typing imports
+    "UP042",  # str+Enum -> StrEnum
+    "UP045",  # Optional -> X | None
+    "RUF001", # ambiguous unicode
+    "RUF002", # ambiguous unicode in docstrings
+    "RUF003", # ambiguous unicode in comments
+    "RUF023", # unsorted __slots__
+    "RUF043", # regex metacharacters in match=
+    "RUF046", # redundant int cast
+    "RUF059", # unused unpacked variable
+    "RUF100", # unused noqa
+    "B904",   # raise from in except clauses
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

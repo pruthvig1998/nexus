@@ -17,6 +17,7 @@ Post-signal enrichment:
 - PEG boost: optional score bump when PEG < 1.5
 - ATR-based stops (1.5x) and targets (4.5x = 3:1 R:R)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -49,6 +50,7 @@ async def get_vix() -> float:
 
     try:
         import yfinance as yf
+
         ticker = yf.Ticker("^VIX")
         hist = await asyncio.to_thread(ticker.history, period="1d")
         if hist is not None and len(hist) > 0:
@@ -69,6 +71,7 @@ def _get_peg_ratio(ticker: str) -> Optional[float]:
     """Try to fetch PEG ratio via yfinance. Returns None if unavailable."""
     try:
         import yfinance as yf
+
         info = yf.Ticker(ticker).info
         peg = info.get("pegRatio")
         if peg is not None and peg > 0:
@@ -79,6 +82,7 @@ def _get_peg_ratio(ticker: str) -> Optional[float]:
 
 
 # ── Pattern detectors ────────────────────────────────────────────────────────
+
 
 def _detect_cup_and_handle(df: pd.DataFrame) -> Optional[dict]:
     """Detect a cup-and-handle pattern in the last 40-60 days.
@@ -100,7 +104,7 @@ def _detect_cup_and_handle(df: pd.DataFrame) -> Optional[dict]:
         if len(closes) < lookback + 5:
             continue
 
-        window = closes.iloc[-(lookback + 5):]
+        window = closes.iloc[-(lookback + 5) :]
         cup_start_price = float(window.iloc[0])
         trough_pos = int(window.iloc[:lookback].argmin())
         cup_trough_price = float(window.iloc[trough_pos])
@@ -190,7 +194,9 @@ def _detect_reversal_play(df: pd.DataFrame) -> Optional[dict]:
     # Volume spike > 2x average during the drop period
     vol_r = volume_ratio(volumes, period=20)
     # Also check if any of the last 5 days had a volume spike
-    avg_vol = float(volumes.rolling(20).mean().iloc[-6]) if len(volumes) >= 26 else float(volumes.mean())
+    avg_vol = (
+        float(volumes.rolling(20).mean().iloc[-6]) if len(volumes) >= 26 else float(volumes.mean())
+    )
     max_vol_last_5 = float(volumes.iloc[-5:].max())
     if max_vol_last_5 / max(avg_vol, 1) < 2.0:
         return None
@@ -211,6 +217,7 @@ def _detect_reversal_play(df: pd.DataFrame) -> Optional[dict]:
 
 # ── Strategy ─────────────────────────────────────────────────────────────────
 
+
 class IronGridStrategy:
     """IronGrid Discipline — community playbook encoded as systematic rules.
 
@@ -218,6 +225,7 @@ class IronGridStrategy:
     and a signal filter (VIX gate, first-30-min rule, volume confirmation,
     trend alignment).
     """
+
     name = "irongrid"
 
     # Configurable thresholds
@@ -225,7 +233,7 @@ class IronGridStrategy:
     _MIN_VOL_RATIO = 1.2
     _FIRST_30_MIN_SKIP = True  # respect the first-30-min rule in live mode
     _ATR_STOP_MULT = 1.5
-    _ATR_TARGET_MULT = 4.5     # 3:1 R:R with 1.5x stop
+    _ATR_TARGET_MULT = 4.5  # 3:1 R:R with 1.5x stop
     _PEG_BOOST_THRESHOLD = 1.5
     _PEG_BOOST_AMOUNT = 0.05
 
@@ -265,14 +273,16 @@ class IronGridStrategy:
             if not self._paper and self._FIRST_30_MIN_SKIP:
                 try:
                     from zoneinfo import ZoneInfo
+
                     now_et = datetime.now(ZoneInfo("America/New_York"))
-                    market_open = now_et.replace(hour=9, minute=30, second=0,
-                                                 microsecond=0)
+                    market_open = now_et.replace(hour=9, minute=30, second=0, microsecond=0)
                     minutes_since_open = (now_et - market_open).total_seconds() / 60
                     if 0 < minutes_since_open < 30:
-                        log.debug("IronGrid first-30-min rule: too early",
-                                  ticker=ticker,
-                                  minutes=f"{minutes_since_open:.0f}")
+                        log.debug(
+                            "IronGrid first-30-min rule: too early",
+                            ticker=ticker,
+                            minutes=f"{minutes_since_open:.0f}",
+                        )
                         return None
                 except Exception:
                     pass  # if timezone handling fails, skip this gate
@@ -288,9 +298,14 @@ class IronGridStrategy:
             _trend_bearish = sma50 is not None and last_price < sma50  # noqa: F841
 
             # ── Compute shared indicators ───────────────────────────────────
-            atr_result = atr(highs, lows, closes, period=self._s.atr_period,
-                             entry_price=last_price,
-                             multiplier=self._ATR_STOP_MULT)
+            atr_result = atr(
+                highs,
+                lows,
+                closes,
+                period=self._s.atr_period,
+                entry_price=last_price,
+                multiplier=self._ATR_STOP_MULT,
+            )
 
             candidates: list[Signal] = []
 
@@ -311,13 +326,17 @@ class IronGridStrategy:
                         f"vol {cup['vol_ratio']:.1f}x"
                     )
                     signal = Signal(
-                        ticker=ticker, direction="BUY", score=score,
-                        strategy=self.name, reasoning=reasoning,
+                        ticker=ticker,
+                        direction="BUY",
+                        score=score,
+                        strategy=self.name,
+                        reasoning=reasoning,
                         entry_price=last_price,
                         stop_price=stop_px,
                         target_price=target_px,
                         limit_price=last_price * 1.001,
-                        atr_val=atr_result.value, vol_ratio=cup["vol_ratio"],
+                        atr_val=atr_result.value,
+                        vol_ratio=cup["vol_ratio"],
                         catalysts=[
                             "profit_ladder: trim_25pct_at_+25%, "
                             "trim_50pct_at_+50%, recover_capital_at_+100%"
@@ -342,8 +361,11 @@ class IronGridStrategy:
                     f"RSI at {reversal['rsi']:.1f}, showing recovery"
                 )
                 signal = Signal(
-                    ticker=ticker, direction="BUY", score=score,
-                    strategy=self.name, reasoning=reasoning,
+                    ticker=ticker,
+                    direction="BUY",
+                    score=score,
+                    strategy=self.name,
+                    reasoning=reasoning,
                     entry_price=last_price,
                     stop_price=stop_px,
                     target_price=target_px,
@@ -368,11 +390,18 @@ class IronGridStrategy:
 
             # ── VIX caution: reduce score when volatility is elevated ──────
             if vix_caution:
-                penalty = min((vix - self._VIX_CEILING) * 0.02, 0.15)  # 2% per VIX point over ceiling, max 15%
+                penalty = min(
+                    (vix - self._VIX_CEILING) * 0.02, 0.15
+                )  # 2% per VIX point over ceiling, max 15%
                 best.score = round(max(best.score - penalty, 0.50), 4)
                 best.risks.append(f"elevated_vix: {vix:.1f} (score reduced by {penalty:.2f})")
-                log.debug("VIX caution applied", ticker=ticker, vix=f"{vix:.1f}",
-                          penalty=f"{penalty:.2f}", adjusted_score=f"{best.score:.2f}")
+                log.debug(
+                    "VIX caution applied",
+                    ticker=ticker,
+                    vix=f"{vix:.1f}",
+                    penalty=f"{penalty:.2f}",
+                    adjusted_score=f"{best.score:.2f}",
+                )
 
             # ── Optional PEG boost ──────────────────────────────────────────
             peg = await asyncio.to_thread(_get_peg_ratio, ticker)
@@ -381,8 +410,13 @@ class IronGridStrategy:
                 best.reasoning += f" | PEG={peg:.2f} (value+growth boost)"
                 best.catalysts.append(f"peg_ratio: {peg:.2f} < {self._PEG_BOOST_THRESHOLD}")
 
-            log.info("IronGrid signal", ticker=ticker, direction=best.direction,
-                     score=f"{best.score:.2f}", pattern=best.reasoning[:60])
+            log.info(
+                "IronGrid signal",
+                ticker=ticker,
+                direction=best.direction,
+                score=f"{best.score:.2f}",
+                pattern=best.reasoning[:60],
+            )
             return best
 
         except Exception as e:

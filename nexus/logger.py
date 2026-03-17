@@ -5,8 +5,9 @@ import structlog
 
 
 def setup_logging(level: str = "INFO") -> None:
-    logging.basicConfig(format="%(message)s", stream=sys.stdout,
-                        level=getattr(logging, level.upper(), logging.INFO))
+    logging.basicConfig(
+        format="%(message)s", stream=sys.stdout, level=getattr(logging, level.upper(), logging.INFO)
+    )
     structlog.configure(
         processors=[
             structlog.stdlib.add_log_level,

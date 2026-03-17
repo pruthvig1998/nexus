@@ -11,6 +11,7 @@ The strategy pre-filters headlines with high-impact keyword matching to avoid
 unnecessary Claude API calls, then uses AI to form a directional thesis with
 conviction scoring.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -37,16 +38,48 @@ _NEWS_CACHE_MAX_SIZE = 100  # evict oldest entries when cache exceeds this
 
 # ── High-impact keyword set ──────────────────────────────────────────────────
 
-_HIGH_IMPACT_KEYWORDS = frozenset({
-    "earnings", "revenue", "guidance", "forecast", "profit", "loss",
-    "acquisition", "merger", "buyback", "dividend", "split",
-    "fda", "approval", "clinical", "trial",
-    "keynote", "conference", "gtc", "wwdc", "launch", "unveil", "announce",
-    "tariff", "sanction", "ban", "regulation",
-    "upgrade", "downgrade", "price target", "initiate",
-    "layoff", "restructuring", "ceo", "resign",
-    "beat", "miss", "surprise", "record",
-})
+_HIGH_IMPACT_KEYWORDS = frozenset(
+    {
+        "earnings",
+        "revenue",
+        "guidance",
+        "forecast",
+        "profit",
+        "loss",
+        "acquisition",
+        "merger",
+        "buyback",
+        "dividend",
+        "split",
+        "fda",
+        "approval",
+        "clinical",
+        "trial",
+        "keynote",
+        "conference",
+        "gtc",
+        "wwdc",
+        "launch",
+        "unveil",
+        "announce",
+        "tariff",
+        "sanction",
+        "ban",
+        "regulation",
+        "upgrade",
+        "downgrade",
+        "price target",
+        "initiate",
+        "layoff",
+        "restructuring",
+        "ceo",
+        "resign",
+        "beat",
+        "miss",
+        "surprise",
+        "record",
+    }
+)
 
 
 # ── Claude AI prompt ─────────────────────────────────────────────────────────
@@ -72,6 +105,7 @@ Rules:
 
 # ── EventCalendarStrategy ────────────────────────────────────────────────────
 
+
 class EventCalendarStrategy:
     """Proactive event-driven strategy: detect upcoming catalysts and use
     Claude AI to research them and form trading theses before the market moves.
@@ -94,6 +128,7 @@ class EventCalendarStrategy:
     def _get_client(self) -> Any:
         if self._client is None:
             import anthropic
+
             self._client = anthropic.Anthropic(api_key=self._cfg.anthropic_api_key)
         return self._client
 
@@ -125,10 +160,13 @@ class EventCalendarStrategy:
 
             # 3. If earnings within 3 days, add as a synthetic headline
             if earnings:
-                significant.insert(0, {
-                    "title": f"Earnings report expected {earnings['date']}",
-                    "publisher": "calendar",
-                })
+                significant.insert(
+                    0,
+                    {
+                        "title": f"Earnings report expected {earnings['date']}",
+                        "publisher": "calendar",
+                    },
+                )
 
             if not significant:
                 return None
@@ -141,9 +179,14 @@ class EventCalendarStrategy:
                 return None
 
             # 5. Compute ATR-based stops and targets
-            atr_result = atr(highs, lows, closes, period=self._s.atr_period,
-                             entry_price=last_price,
-                             multiplier=self._r.atr_stop_multiplier)
+            atr_result = atr(
+                highs,
+                lows,
+                closes,
+                period=self._s.atr_period,
+                entry_price=last_price,
+                multiplier=self._r.atr_stop_multiplier,
+            )
 
             if research["direction"] == "BUY":
                 stop_px = last_price - atr_result.value * 1.5
@@ -182,6 +225,7 @@ class EventCalendarStrategy:
         """Check if earnings are within the next 3 trading days."""
         try:
             import yfinance as yf
+
             t = yf.Ticker(ticker)
             cal = await asyncio.to_thread(lambda: t.calendar)
             if cal is None:
@@ -239,6 +283,7 @@ class EventCalendarStrategy:
 
         try:
             import yfinance as yf
+
             t = yf.Ticker(ticker)
             news = await asyncio.to_thread(lambda: t.news)
 
@@ -295,8 +340,7 @@ class EventCalendarStrategy:
             return None
 
         headline_text = "\n".join(
-            f"- {h.get('title', '(no title)')} ({h.get('publisher', 'unknown')})"
-            for h in headlines
+            f"- {h.get('title', '(no title)')} ({h.get('publisher', 'unknown')})" for h in headlines
         )
 
         prompt = _EVENT_PROMPT.format(
@@ -328,8 +372,12 @@ class EventCalendarStrategy:
 
             event_type = str(parsed.get("event_type", "other"))
             if event_type not in (
-                "earnings", "product_launch", "macro",
-                "analyst", "corporate_action", "other",
+                "earnings",
+                "product_launch",
+                "macro",
+                "analyst",
+                "corporate_action",
+                "other",
             ):
                 event_type = "other"
 
@@ -337,9 +385,13 @@ class EventCalendarStrategy:
             if time_horizon not in ("intraday", "swing", "position"):
                 time_horizon = "swing"
 
-            log.info("Event research complete", ticker=ticker,
-                     direction=direction, score=f"{score:.2f}",
-                     event_type=event_type)
+            log.info(
+                "Event research complete",
+                ticker=ticker,
+                direction=direction,
+                score=f"{score:.2f}",
+                event_type=event_type,
+            )
 
             return {
                 "direction": direction,

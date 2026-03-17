@@ -4,6 +4,7 @@ v3 changes:
   - Removed var_confidence (dead code)
   - Added max_short_exposure_pct to RiskConfig (short book capped at 50%)
 """
+
 from __future__ import annotations
 
 import os
@@ -18,9 +19,11 @@ load_dotenv()
 @dataclass
 class DiscordConfig:
     bot_token: str = field(default_factory=lambda: os.getenv("DISCORD_BOT_TOKEN", ""))
-    channel_ids: List[int] = field(default_factory=lambda: [
-        int(x) for x in os.getenv("DISCORD_CHANNEL_IDS", "").split(",") if x.strip().isdigit()
-    ])
+    channel_ids: List[int] = field(
+        default_factory=lambda: [
+            int(x) for x in os.getenv("DISCORD_CHANNEL_IDS", "").split(",") if x.strip().isdigit()
+        ]
+    )
     min_message_score: float = 0.55
     use_llm_parsing: bool = False
     history_limit: int = 50
@@ -28,18 +31,26 @@ class DiscordConfig:
 
 @dataclass
 class TwitterConfig:
-    accounts: List[str] = field(default_factory=lambda: [
-        x.strip() for x in os.getenv("TWITTER_ACCOUNTS", "").split(",") if x.strip()
-    ])
-    poll_interval: int = field(default_factory=lambda: int(os.getenv("TWITTER_POLL_INTERVAL", "20")))
-    nitter_instances: List[str] = field(default_factory=lambda: [
-        x.strip() for x in os.getenv(
-            "NITTER_INSTANCES",
-            "nitter.poast.org,nitter.privacydev.net,nitter.cz,"
-            "nitter.net,nitter.1d4.us,nitter.kavin.rocks,"
-            "nitter.unixfox.eu,nitter.domain.glass"
-        ).split(",") if x.strip()
-    ])
+    accounts: List[str] = field(
+        default_factory=lambda: [
+            x.strip() for x in os.getenv("TWITTER_ACCOUNTS", "").split(",") if x.strip()
+        ]
+    )
+    poll_interval: int = field(
+        default_factory=lambda: int(os.getenv("TWITTER_POLL_INTERVAL", "20"))
+    )
+    nitter_instances: List[str] = field(
+        default_factory=lambda: [
+            x.strip()
+            for x in os.getenv(
+                "NITTER_INSTANCES",
+                "nitter.poast.org,nitter.privacydev.net,nitter.cz,"
+                "nitter.net,nitter.1d4.us,nitter.kavin.rocks,"
+                "nitter.unixfox.eu,nitter.domain.glass",
+            ).split(",")
+            if x.strip()
+        ]
+    )
     min_score: float = 0.55
     use_llm_parsing: bool = False
 
@@ -48,7 +59,9 @@ class TwitterConfig:
 class AlpacaConfig:
     api_key: str = field(default_factory=lambda: os.getenv("ALPACA_API_KEY", ""))
     secret_key: str = field(default_factory=lambda: os.getenv("ALPACA_SECRET_KEY", ""))
-    paper: bool = field(default_factory=lambda: os.getenv("ALPACA_PAPER", "true").lower() != "false")
+    paper: bool = field(
+        default_factory=lambda: os.getenv("ALPACA_PAPER", "true").lower() != "false"
+    )
 
 
 @dataclass
@@ -62,7 +75,7 @@ class MoomooConfig:
 class RiskConfig:
     max_position_pct: float = 0.05
     max_portfolio_exposure: float = 0.90
-    max_short_exposure_pct: float = 0.50    # short book capped at 50% of portfolio
+    max_short_exposure_pct: float = 0.50  # short book capped at 50% of portfolio
     daily_loss_halt_pct: float = 0.02
     max_open_positions: int = 20
     kelly_fraction: float = 0.25
@@ -90,28 +103,47 @@ class StrategyConfig:
     rr_ratio: float = 3.0
 
     # IronGrid rules
-    vix_max_entry: float = 24.5          # don't buy options when VIX above this
-    first_30min_wait: bool = True        # wait 30 min after market open
-    profit_trim_25: float = 0.25         # trim 25% at +25%
-    profit_trim_50: float = 0.50         # trim 50% at +50%
-    profit_recover_100: float = 1.00     # recover capital at +100%
+    vix_max_entry: float = 24.5  # don't buy options when VIX above this
+    first_30min_wait: bool = True  # wait 30 min after market open
+    profit_trim_25: float = 0.25  # trim 25% at +25%
+    profit_trim_50: float = 0.50  # trim 50% at +50%
+    profit_recover_100: float = 1.00  # recover capital at +100%
     max_swing_positions: int = 3
     max_leap_positions: int = 5
-    stop_loss_pct: float = 0.25          # 25% stop loss on options
-    trailing_stop_pct: float = 0.12      # 12% trail once up 20%+
+    stop_loss_pct: float = 0.25  # 25% stop loss on options
+    trailing_stop_pct: float = 0.12  # 12% trail once up 20%+
 
     # Event Calendar strategy
-    event_news_cache_ttl: int = 1800     # 30 min cache for news headlines
-    event_max_claude_calls: int = 5      # max Claude calls per scan cycle
+    event_news_cache_ttl: int = 1800  # 30 min cache for news headlines
+    event_max_claude_calls: int = 5  # max Claude calls per scan cycle
+
+
+@dataclass
+class TelegramConfig:
+    bot_token: str = field(default_factory=lambda: os.getenv("TELEGRAM_BOT_TOKEN", ""))
+    chat_id: str = field(default_factory=lambda: os.getenv("TELEGRAM_CHAT_ID", ""))
+    enabled: bool = field(
+        default_factory=lambda: os.getenv("TELEGRAM_ENABLED", "false").lower() == "true"
+    )
 
 
 @dataclass
 class NEXUSConfig:
     active_broker: str = "alpaca"
-    watchlist: List[str] = field(default_factory=lambda: [
-        "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN",
-        "META", "TSLA", "AMD", "CRM", "NFLX",
-    ])
+    watchlist: List[str] = field(
+        default_factory=lambda: [
+            "AAPL",
+            "MSFT",
+            "NVDA",
+            "GOOGL",
+            "AMZN",
+            "META",
+            "TSLA",
+            "AMD",
+            "CRM",
+            "NFLX",
+        ]
+    )
     scan_interval: int = 60
     paper: bool = True
     anthropic_api_key: str = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY", ""))
@@ -122,8 +154,51 @@ class NEXUSConfig:
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
     discord: DiscordConfig = field(default_factory=DiscordConfig)
     twitter: TwitterConfig = field(default_factory=TwitterConfig)
+    telegram: TelegramConfig = field(default_factory=TelegramConfig)
     db_path: str = "nexus.db"
     log_level: str = "INFO"
+
+    def validate(self) -> None:
+        """Validate configuration. Raises ValueError with all errors found."""
+        errors: List[str] = []
+
+        # Broker-specific API key checks
+        if self.active_broker == "alpaca":
+            if not self.alpaca.api_key:
+                errors.append(
+                    "ALPACA_API_KEY is required when using Alpaca broker. "
+                    "Get one at https://alpaca.markets"
+                )
+            if not self.alpaca.secret_key:
+                errors.append(
+                    "ALPACA_SECRET_KEY is required when using Alpaca broker. "
+                    "Get one at https://alpaca.markets"
+                )
+
+        # Scan interval
+        if self.scan_interval <= 0:
+            errors.append(f"scan_interval must be > 0 (got {self.scan_interval})")
+
+        # Risk params
+        if not (0 < self.risk.max_position_pct <= 1.0):
+            errors.append(
+                f"risk.max_position_pct must be in (0, 1.0] (got {self.risk.max_position_pct})"
+            )
+        if not (0 < self.risk.daily_loss_halt_pct <= 1.0):
+            errors.append(
+                f"risk.daily_loss_halt_pct must be in (0, 1.0] (got {self.risk.daily_loss_halt_pct})"
+            )
+        if self.risk.max_open_positions <= 0:
+            errors.append(
+                f"risk.max_open_positions must be > 0 (got {self.risk.max_open_positions})"
+            )
+
+        # Watchlist
+        if not self.watchlist:
+            errors.append("watchlist must not be empty")
+
+        if errors:
+            raise ValueError("Configuration validation failed:\n  - " + "\n  - ".join(errors))
 
 
 _config: Optional[NEXUSConfig] = None

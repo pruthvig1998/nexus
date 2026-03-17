@@ -24,8 +24,9 @@ def _make_df(n=200, trend="mixed"):
         price = max(price, 10.0)
         high = price * 1.01
         low = price * 0.99
-        rows.append({"open": price, "high": high, "low": low,
-                     "close": price, "volume": 2_000_000.0})
+        rows.append(
+            {"open": price, "high": high, "low": low, "close": price, "volume": 2_000_000.0}
+        )
     return pd.DataFrame(rows)
 
 
@@ -83,12 +84,20 @@ async def test_run_backtest_returns_summary():
         # Patch yfinance download inside asyncio.to_thread
         with mock.patch("nexus.backtest._simulate") as mock_sim:
             from nexus.backtest import TickerResult
+
             mock_sim.return_value = TickerResult(
-                ticker="AAPL", sharpe=1.2, sortino=1.5,
-                max_drawdown_pct=10.0, cagr_pct=15.0,
-                win_rate=0.55, profit_factor=1.8,
-                total_trades=20, long_trades=12, short_trades=8,
-                total_pnl=15_000, final_equity=115_000,
+                ticker="AAPL",
+                sharpe=1.2,
+                sortino=1.5,
+                max_drawdown_pct=10.0,
+                cagr_pct=15.0,
+                win_rate=0.55,
+                profit_factor=1.8,
+                total_trades=20,
+                long_trades=12,
+                short_trades=8,
+                total_pnl=15_000,
+                final_equity=115_000,
             )
 
             # Run with patched asyncio.to_thread that returns df

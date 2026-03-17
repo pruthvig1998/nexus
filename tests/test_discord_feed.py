@@ -3,6 +3,7 @@
 Tests run without a live Discord connection — only the _parse_message()
 function is tested directly.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -11,9 +12,20 @@ from nexus.discord_feed import _parse_message
 
 # ── Parametrized BUY keyword detection ───────────────────────────────────────
 
-@pytest.mark.parametrize("keyword", [
-    "buy", "long", "calls", "bullish", "moon", "breakout", "entry", "dip",
-])
+
+@pytest.mark.parametrize(
+    "keyword",
+    [
+        "buy",
+        "long",
+        "calls",
+        "bullish",
+        "moon",
+        "breakout",
+        "entry",
+        "dip",
+    ],
+)
 def test_buy_keyword_detected(keyword):
     msg = f"$AAPL {keyword} here"
     sigs = _parse_message(msg, "u", "c", "s")
@@ -24,9 +36,19 @@ def test_buy_keyword_detected(keyword):
 
 # ── Parametrized SELL keyword detection ──────────────────────────────────────
 
-@pytest.mark.parametrize("keyword", [
-    "sell", "short", "puts", "bearish", "dump", "breakdown", "exit",
-])
+
+@pytest.mark.parametrize(
+    "keyword",
+    [
+        "sell",
+        "short",
+        "puts",
+        "bearish",
+        "dump",
+        "breakdown",
+        "exit",
+    ],
+)
 def test_sell_keyword_detected(keyword):
     msg = f"$TSLA {keyword} now"
     sigs = _parse_message(msg, "u", "c", "s")
@@ -37,10 +59,32 @@ def test_sell_keyword_detected(keyword):
 
 # ── Common word blocklist (exhaustive) ───────────────────────────────────────
 
-@pytest.mark.parametrize("word", [
-    "I", "A", "AT", "BE", "DO", "GO", "IT", "MY", "OR", "SO", "TO",
-    "US", "AN", "AS", "IF", "IS", "IN", "ON", "UP", "BY",
-])
+
+@pytest.mark.parametrize(
+    "word",
+    [
+        "I",
+        "A",
+        "AT",
+        "BE",
+        "DO",
+        "GO",
+        "IT",
+        "MY",
+        "OR",
+        "SO",
+        "TO",
+        "US",
+        "AN",
+        "AS",
+        "IF",
+        "IS",
+        "IN",
+        "ON",
+        "UP",
+        "BY",
+    ],
+)
 def test_common_word_not_extracted_as_ticker(word):
     msg = f"{word} buy AAPL long"
     sigs = _parse_message(msg, "u", "c", "s")
@@ -49,6 +93,7 @@ def test_common_word_not_extracted_as_ticker(word):
 
 
 # ── Precise score boundaries ────────────────────────────────────────────────
+
 
 def test_score_bare_ticker_is_base():
     """Bare ticker + direction keyword = base score 0.55."""
@@ -89,6 +134,7 @@ def test_score_bare_with_price_is_060():
 
 # ── Reasoning field format ───────────────────────────────────────────────────
 
+
 def test_reasoning_exact_format():
     """Reasoning must be exactly: 'Discord: {author} in #{channel}: {snippet}'."""
     sigs = _parse_message("$AAPL long", "trader_joe", "stocks", "MyServer")
@@ -114,6 +160,7 @@ def test_reasoning_snippet_truncated_at_120_chars():
 
 
 # ── Edge cases ───────────────────────────────────────────────────────────────
+
 
 def test_empty_string_returns_no_signals():
     sigs = _parse_message("", "u", "c", "s")
@@ -144,6 +191,7 @@ def test_very_long_message_does_not_crash():
 
 # ── Entry/stop/target prices zeroed ─────────────────────────────────────────
 
+
 def test_all_prices_exactly_zero():
     sigs = _parse_message("$AAPL buy at $175", "u", "c", "s")
     assert len(sigs) == 1
@@ -153,6 +201,7 @@ def test_all_prices_exactly_zero():
 
 
 # ── Multi-ticker with context isolation ──────────────────────────────────────
+
 
 def test_multi_ticker_mixed_directions_no_context_bleeding():
     # Tickers need enough separation so buy/sell keywords don't bleed across
@@ -167,6 +216,7 @@ def test_multi_ticker_mixed_directions_no_context_bleeding():
 
 # ── Direction: no direction → skip ───────────────────────────────────────────
 
+
 def test_no_direction_keyword_yields_no_signal():
     sigs = _parse_message("What does everyone think about $AAPL?", "u", "c", "s")
     assert sigs == []
@@ -179,6 +229,7 @@ def test_pure_question_no_signal():
 
 # ── Strategy name ────────────────────────────────────────────────────────────
 
+
 def test_strategy_is_discord():
     sigs = _parse_message("$AAPL long", "u", "c", "s")
     assert len(sigs) == 1
@@ -186,6 +237,7 @@ def test_strategy_is_discord():
 
 
 # ── Dedup (same ticker mentioned twice) ──────────────────────────────────────
+
 
 def test_dedup_same_ticker_in_message():
     sigs = _parse_message("$AAPL buy, AAPL looking strong", "u", "c", "s")

@@ -1,4 +1,5 @@
 """Unit tests for signal generation — verifies both BUY and SELL signals."""
+
 import numpy as np
 import pandas as pd
 
@@ -19,8 +20,15 @@ def _make_df(n=100, trend="up", vol_multiplier=1.5):
             close = base + np.random.normal(0, 1)
         high = close * 1.005
         low = close * 0.995
-        rows.append({"open": close, "high": high, "low": low,
-                     "close": close, "volume": 2_000_000 * vol_multiplier})
+        rows.append(
+            {
+                "open": close,
+                "high": high,
+                "low": low,
+                "close": close,
+                "volume": 2_000_000 * vol_multiplier,
+            }
+        )
     return pd.DataFrame(rows)
 
 

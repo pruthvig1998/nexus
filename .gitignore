@@ -27,3 +27,17 @@ reports/
 .coverage
 htmlcov/
 .pytest_cache/
+
+# Database
+*.db
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# Credentials
+*.key
+*.pem
+*.p12
+credentials.json

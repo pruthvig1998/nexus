@@ -12,6 +12,7 @@ v3.1 fixes (from quant audit):
   - NEW: Monte Carlo overlay for confidence intervals
   - NEW: Slippage model (0.05% on stops, 0.02% on limits)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -32,8 +33,8 @@ from nexus.strategy import compute_signal
 log = get_logger("backtest")
 
 # Slippage model: extra cost beyond commission
-_SLIPPAGE_STOP  = 0.0005   # 0.05% additional on stop-loss exits (gap risk)
-_SLIPPAGE_LIMIT = 0.0002   # 0.02% on limit/target exits
+_SLIPPAGE_STOP = 0.0005  # 0.05% additional on stop-loss exits (gap risk)
+_SLIPPAGE_LIMIT = 0.0002  # 0.02% on limit/target exits
 
 
 @dataclass
@@ -50,7 +51,7 @@ class TickerResult:
     short_trades: int
     total_pnl: float
     final_equity: float
-    avg_trade_duration: float = 0.0   # bars
+    avg_trade_duration: float = 0.0  # bars
 
 
 @dataclass
@@ -65,12 +66,13 @@ class BacktestSummary:
     total_trades: int
     long_trades: int
     short_trades: int
-    monte_carlo_sharpe_5pct: float = 0.0   # 5th percentile Monte Carlo Sharpe
+    monte_carlo_sharpe_5pct: float = 0.0  # 5th percentile Monte Carlo Sharpe
     monte_carlo_sharpe_95pct: float = 0.0  # 95th percentile
     generated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
 # ── Metric helpers ────────────────────────────────────────────────────────────
+
 
 def _sharpe(returns: pd.Series) -> float:
     """Annualised Sharpe using ALL trading days (no zero-return filter)."""
@@ -102,6 +104,7 @@ def _cagr(equity: pd.Series, years: float) -> float:
 
 _spy_cache: Optional[pd.Series] = None  # date-indexed Series of SPY closes
 
+
 async def _fetch_spy_regime(period: str) -> pd.Series:
     """Returns True/False Series: True = bull (price > 200d SMA), False = bear."""
     global _spy_cache
@@ -109,9 +112,11 @@ async def _fetch_spy_regime(period: str) -> pd.Series:
         return _spy_cache
     try:
         import yfinance as yf
+
         df = await asyncio.to_thread(
-            lambda: yf.download("SPY", period=period, interval="1d",
-                                auto_adjust=True, progress=False)
+            lambda: yf.download(
+                "SPY", period=period, interval="1d", auto_adjust=True, progress=False
+            )
         )
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = [c[0].lower() for c in df.columns]
@@ -119,7 +124,7 @@ async def _fetch_spy_regime(period: str) -> pd.Series:
             df.columns = [c.lower() for c in df.columns]
         closes = df["close"]
         sma200 = closes.rolling(200).mean()
-        _spy_cache = (closes > sma200)
+        _spy_cache = closes > sma200
         return _spy_cache
     except Exception:
         return pd.Series(dtype=bool)
@@ -127,11 +132,16 @@ async def _fetch_spy_regime(period: str) -> pd.Series:
 
 # ── Per-ticker simulation ─────────────────────────────────────────────────────
 
-def _simulate(ticker: str, df: pd.DataFrame,
-              strategy_cfg: StrategyConfig, risk_cfg: RiskConfig,
-              spy_regime: Optional[pd.Series] = None,
-              initial_capital: float = 100_000.0,
-              commission_pct: float = 0.001) -> TickerResult:
+
+def _simulate(
+    ticker: str,
+    df: pd.DataFrame,
+    strategy_cfg: StrategyConfig,
+    risk_cfg: RiskConfig,
+    spy_regime: Optional[pd.Series] = None,
+    initial_capital: float = 100_000.0,
+    commission_pct: float = 0.001,
+) -> TickerResult:
     """Walk-forward simulation — each bar sees only past data.
 
     Short P&L fix: opening a short deducts the entry commission from capital
@@ -164,8 +174,8 @@ def _simulate(ticker: str, df: pd.DataFrame,
         window = df.iloc[: i + 1]
         row = df.iloc[i]
         close = float(row["close"])
-        high  = float(row["high"])
-        low   = float(row["low"])
+        high = float(row["high"])
+        low = float(row["low"])
         bar_date = df.index[i]
 
         # ── SPY regime check ───────────────────────────────────────────────
@@ -191,15 +201,17 @@ def _simulate(ticker: str, df: pd.DataFrame,
                 exit_price = pos["stop"] * (1 - _SLIPPAGE_STOP)
                 pnl = (exit_price - pos["entry"]) * pos["shares"]
                 capital += pos["shares"] * exit_price * (1 - commission_pct)
-                trades.append({"pnl": pnl, "reason": "stop", "side": "LONG",
-                               "duration": i - long_entry_bar})
+                trades.append(
+                    {"pnl": pnl, "reason": "stop", "side": "LONG", "duration": i - long_entry_bar}
+                )
                 open_long = None
             elif high >= pos["target"]:
                 exit_price = pos["target"] * (1 + _SLIPPAGE_LIMIT)
                 pnl = (exit_price - pos["entry"]) * pos["shares"]
                 capital += pos["shares"] * exit_price * (1 - commission_pct)
-                trades.append({"pnl": pnl, "reason": "target", "side": "LONG",
-                               "duration": i - long_entry_bar})
+                trades.append(
+                    {"pnl": pnl, "reason": "target", "side": "LONG", "duration": i - long_entry_bar}
+                )
                 open_long = None
 
         # ── Exit short — STOP (price rises) checked BEFORE target ──────────
@@ -217,20 +229,27 @@ def _simulate(ticker: str, df: pd.DataFrame,
                 exit_price = pos["stop"] * (1 + _SLIPPAGE_STOP)
                 pnl = (pos["entry"] - exit_price) * pos["shares"]
                 capital += pnl - pos["shares"] * exit_price * commission_pct
-                trades.append({"pnl": pnl, "reason": "stop", "side": "SHORT",
-                               "duration": i - short_entry_bar})
+                trades.append(
+                    {"pnl": pnl, "reason": "stop", "side": "SHORT", "duration": i - short_entry_bar}
+                )
                 open_short = None
             elif low <= pos["target"]:
                 # Target hit — price dropped; slight slippage
                 exit_price = pos["target"] * (1 - _SLIPPAGE_LIMIT)
                 pnl = (pos["entry"] - exit_price) * pos["shares"]
                 capital += pnl - pos["shares"] * exit_price * commission_pct
-                trades.append({"pnl": pnl, "reason": "target", "side": "SHORT",
-                               "duration": i - short_entry_bar})
+                trades.append(
+                    {
+                        "pnl": pnl,
+                        "reason": "target",
+                        "side": "SHORT",
+                        "duration": i - short_entry_bar,
+                    }
+                )
                 open_short = None
 
         # ── Mark-to-market equity (FIXED: no inflated proceeds in capital) ──
-        long_value  = open_long["shares"] * close if open_long else 0.0
+        long_value = open_long["shares"] * close if open_long else 0.0
         # Short liability: what we'd pay to cover at current price
         short_value = -open_short["shares"] * close if open_short else 0.0
         # Short basis (what we already "committed" at entry = entry * shares)
@@ -265,7 +284,9 @@ def _simulate(ticker: str, df: pd.DataFrame,
                         }
                         long_entry_bar = i
 
-                elif sig.direction == "SELL" and open_short is None and shares >= 1 and not spy_bull:
+                elif (
+                    sig.direction == "SELL" and open_short is None and shares >= 1 and not spy_bull
+                ):
                     # FIX: deduct only the opening commission — no proceeds credited
                     open_commission = shares * sig.entry_price * commission_pct
                     if open_commission <= capital * 0.05:  # margin check
@@ -286,22 +307,34 @@ def _simulate(ticker: str, df: pd.DataFrame,
         if open_long:
             pnl = (final_price - open_long["entry"]) * open_long["shares"]
             capital += open_long["shares"] * final_price * (1 - commission_pct)
-            trades.append({"pnl": pnl, "reason": "period_end", "side": "LONG",
-                           "duration": len(df) - long_entry_bar})
+            trades.append(
+                {
+                    "pnl": pnl,
+                    "reason": "period_end",
+                    "side": "LONG",
+                    "duration": len(df) - long_entry_bar,
+                }
+            )
         if open_short:
             pnl = (open_short["entry"] - final_price) * open_short["shares"]
             capital += pnl - open_short["shares"] * final_price * commission_pct
-            trades.append({"pnl": pnl, "reason": "period_end", "side": "SHORT",
-                           "duration": len(df) - short_entry_bar})
+            trades.append(
+                {
+                    "pnl": pnl,
+                    "reason": "period_end",
+                    "side": "SHORT",
+                    "duration": len(df) - short_entry_bar,
+                }
+            )
 
-    eq  = pd.Series(equity_curve) if equity_curve else pd.Series([initial_capital])
-    ret = pd.Series(daily_returns)  if daily_returns  else pd.Series([0.0])
+    eq = pd.Series(equity_curve) if equity_curve else pd.Series([initial_capital])
+    ret = pd.Series(daily_returns) if daily_returns else pd.Series([0.0])
     years = len(df) / 252
-    wins   = [t["pnl"] for t in trades if t["pnl"] > 0]
+    wins = [t["pnl"] for t in trades if t["pnl"] > 0]
     losses = [abs(t["pnl"]) for t in trades if t["pnl"] < 0]
-    long_trades  = [t for t in trades if t["side"] == "LONG"]
+    long_trades = [t for t in trades if t["side"] == "LONG"]
     short_trades = [t for t in trades if t["side"] == "SHORT"]
-    durations    = [t.get("duration", 0) for t in trades]
+    durations = [t.get("duration", 0) for t in trades]
 
     return TickerResult(
         ticker=ticker,
@@ -322,6 +355,7 @@ def _simulate(ticker: str, df: pd.DataFrame,
 
 # ── Monte Carlo simulation ────────────────────────────────────────────────────
 
+
 def _monte_carlo_sharpe(results: List[TickerResult], n_sims: int = 500) -> Tuple[float, float]:
     """Bootstrap resample trade P&Ls to get Sharpe confidence interval."""
     all_pnls = []
@@ -341,6 +375,7 @@ def _monte_carlo_sharpe(results: List[TickerResult], n_sims: int = 500) -> Tuple
 
 # ── Main entry point ──────────────────────────────────────────────────────────
 
+
 async def run_backtest(
     tickers: List[str],
     years: float = 2.0,
@@ -353,9 +388,14 @@ async def run_backtest(
 
     cfg = config or get_config()
     period = f"{int(years * 365)}d"
-    log.info("Backtest starting", tickers=tickers, years=years,
-             capital=f"${initial_capital:,.0f}", mode="long/short",
-             spy_regime=use_spy_regime)
+    log.info(
+        "Backtest starting",
+        tickers=tickers,
+        years=years,
+        capital=f"${initial_capital:,.0f}",
+        mode="long/short",
+        spy_regime=use_spy_regime,
+    )
 
     # Fetch SPY regime in parallel with data
     spy_regime = None
@@ -365,9 +405,11 @@ async def run_backtest(
     async def _fetch(ticker: str) -> Tuple[str, Optional[pd.DataFrame]]:
         try:
             import yfinance as yf
+
             df = await asyncio.to_thread(
-                lambda: yf.download(ticker, period=period, interval="1d",
-                                    auto_adjust=True, progress=False)
+                lambda: yf.download(
+                    ticker, period=period, interval="1d", auto_adjust=True, progress=False
+                )
             )
             if df is not None and len(df) > 80:
                 if isinstance(df.columns, pd.MultiIndex):
@@ -375,8 +417,7 @@ async def run_backtest(
                 else:
                     df.columns = [c.lower() for c in df.columns]
                 return ticker, df
-            log.warning("Insufficient data", ticker=ticker,
-                        bars=len(df) if df is not None else 0)
+            log.warning("Insufficient data", ticker=ticker, bars=len(df) if df is not None else 0)
             return ticker, None
         except Exception as e:
             log.error("Download failed", ticker=ticker, error=str(e))
@@ -388,26 +429,27 @@ async def run_backtest(
         if df is not None:
             price_data[name] = df
 
-    log.info("Data ready", downloaded=len(price_data),
-             skipped=len(tickers) - len(price_data))
+    log.info("Data ready", downloaded=len(price_data), skipped=len(tickers) - len(price_data))
 
     results: List[TickerResult] = []
     # Aggregate equity for true portfolio Sharpe
 
     for ticker, df in price_data.items():
         result = await asyncio.to_thread(
-            _simulate, ticker, df, cfg.strategy, cfg.risk,
-            spy_regime, initial_capital
+            _simulate, ticker, df, cfg.strategy, cfg.risk, spy_regime, initial_capital
         )
         results.append(result)
 
-        log.info("Done", ticker=ticker,
-                 sharpe=f"{result.sharpe:.2f}",
-                 cagr=f"{result.cagr_pct:.1f}%",
-                 max_dd=f"{result.max_drawdown_pct:.1f}%",
-                 win_rate=f"{result.win_rate:.0%}",
-                 trades=f"{result.total_trades} ({result.long_trades}L/{result.short_trades}S)",
-                 avg_hold=f"{result.avg_trade_duration:.1f}d")
+        log.info(
+            "Done",
+            ticker=ticker,
+            sharpe=f"{result.sharpe:.2f}",
+            cagr=f"{result.cagr_pct:.1f}%",
+            max_dd=f"{result.max_drawdown_pct:.1f}%",
+            win_rate=f"{result.win_rate:.0%}",
+            trades=f"{result.total_trades} ({result.long_trades}L/{result.short_trades}S)",
+            avg_hold=f"{result.avg_trade_duration:.1f}d",
+        )
 
     if not results:
         return BacktestSummary(tickers, years, [], 0, 0, 0, 0, 0, 0, 0)
@@ -433,6 +475,7 @@ async def run_backtest(
 
 # ── HTML Report ───────────────────────────────────────────────────────────────
 
+
 def generate_report(summary: BacktestSummary, output_path: str) -> str:
     # Sort results by Sharpe descending
     sorted_results = sorted(summary.results, key=lambda r: r.sharpe, reverse=True)
@@ -440,15 +483,15 @@ def generate_report(summary: BacktestSummary, output_path: str) -> str:
     rows = "".join(
         f"<tr>"
         f"<td class='ticker'>{r.ticker}</td>"
-        f"<td class='{'pos' if r.sharpe>=1 else 'neutral' if r.sharpe>=0.5 else 'neg'}'>{r.sharpe:.2f}</td>"
-        f"<td class='{'pos' if r.sortino>=1 else 'neg'}'>{r.sortino:.2f}</td>"
-        f"<td class='{'pos' if r.cagr_pct>=0 else 'neg'}'>{r.cagr_pct:.1f}%</td>"
-        f"<td class='{'neg' if r.max_drawdown_pct>15 else 'neutral' if r.max_drawdown_pct>8 else 'pos'}'>{r.max_drawdown_pct:.1f}%</td>"
+        f"<td class='{'pos' if r.sharpe >= 1 else 'neutral' if r.sharpe >= 0.5 else 'neg'}'>{r.sharpe:.2f}</td>"
+        f"<td class='{'pos' if r.sortino >= 1 else 'neg'}'>{r.sortino:.2f}</td>"
+        f"<td class='{'pos' if r.cagr_pct >= 0 else 'neg'}'>{r.cagr_pct:.1f}%</td>"
+        f"<td class='{'neg' if r.max_drawdown_pct > 15 else 'neutral' if r.max_drawdown_pct > 8 else 'pos'}'>{r.max_drawdown_pct:.1f}%</td>"
         f"<td>{r.win_rate:.0%}</td>"
-        f"<td class='{'pos' if r.profit_factor>=1.5 else 'neg'}'>{r.profit_factor:.2f}x</td>"
+        f"<td class='{'pos' if r.profit_factor >= 1.5 else 'neg'}'>{r.profit_factor:.2f}x</td>"
         f"<td><span class='long-badge'>▲{r.long_trades}L</span> <span class='short-badge'>▼{r.short_trades}S</span></td>"
         f"<td>{r.avg_trade_duration:.0f}d</td>"
-        f"<td class='{'pos' if r.total_pnl>=0 else 'neg'}'>${r.total_pnl:+,.0f}</td>"
+        f"<td class='{'pos' if r.total_pnl >= 0 else 'neg'}'>${r.total_pnl:+,.0f}</td>"
         f"</tr>"
         for r in sorted_results
     )
@@ -458,10 +501,13 @@ def generate_report(summary: BacktestSummary, output_path: str) -> str:
         mark = "✓ PASS" if ok else "✗ FAIL"
         return f"<span class='{cls}'>{mark}</span> <span class='badge-val'>({val})</span>"
 
-    long_pct  = summary.long_trades  / max(summary.total_trades, 1) * 100
+    long_pct = summary.long_trades / max(summary.total_trades, 1) * 100
     short_pct = summary.short_trades / max(summary.total_trades, 1) * 100
-    mc_note = (f"{summary.monte_carlo_sharpe_5pct:.2f} – {summary.monte_carlo_sharpe_95pct:.2f}"
-               if summary.monte_carlo_sharpe_95pct > 0 else "n/a")
+    mc_note = (
+        f"{summary.monte_carlo_sharpe_5pct:.2f} – {summary.monte_carlo_sharpe_95pct:.2f}"
+        if summary.monte_carlo_sharpe_95pct > 0
+        else "n/a"
+    )
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -500,25 +546,25 @@ footer{{margin-top:2rem;color:#6c7086;font-size:.7rem;text-align:center}}
 <body>
 <h1>⚡ NEXUS v3.1 Backtest Report</h1>
 <p class="subtitle">
-  {summary.generated_at[:19].replace('T',' ')} UTC &nbsp;·&nbsp;
+  {summary.generated_at[:19].replace("T", " ")} UTC &nbsp;·&nbsp;
   {summary.years:.0f}-year simulation &nbsp;·&nbsp;
   Long/Short &nbsp;·&nbsp; SPY regime gated &nbsp;·&nbsp;
   Slippage model applied &nbsp;·&nbsp;
-  {', '.join(summary.tickers)}
+  {", ".join(summary.tickers)}
 </p>
 
 <div class="grid">
   <div class="card">
-    <span class="val {'pos' if summary.portfolio_sharpe>=1 else 'neg'}">{summary.portfolio_sharpe:.2f}</span>
+    <span class="val {"pos" if summary.portfolio_sharpe >= 1 else "neg"}">{summary.portfolio_sharpe:.2f}</span>
     <div class="lbl">Portfolio Sharpe</div>
     <div class="sub">MC 90% CI: {mc_note}</div>
   </div>
   <div class="card">
-    <span class="val {'pos' if summary.portfolio_cagr>=0 else 'neg'}">{summary.portfolio_cagr:.1f}%</span>
+    <span class="val {"pos" if summary.portfolio_cagr >= 0 else "neg"}">{summary.portfolio_cagr:.1f}%</span>
     <div class="lbl">Portfolio CAGR</div>
   </div>
   <div class="card">
-    <span class="val {'pos' if summary.portfolio_max_dd<10 else 'neutral' if summary.portfolio_max_dd<20 else 'neg'}">{summary.portfolio_max_dd:.1f}%</span>
+    <span class="val {"pos" if summary.portfolio_max_dd < 10 else "neutral" if summary.portfolio_max_dd < 20 else "neg"}">{summary.portfolio_max_dd:.1f}%</span>
     <div class="lbl">Max Drawdown</div>
   </div>
   <div class="card">
@@ -557,19 +603,19 @@ footer{{margin-top:2rem;color:#6c7086;font-size:.7rem;text-align:center}}
 <div class="target-grid">
   <div class="target-item">
     <div class="label">Sharpe &gt; 1.0</div>
-    {badge(summary.portfolio_sharpe>=1.0, f'{summary.portfolio_sharpe:.2f}')}
+    {badge(summary.portfolio_sharpe >= 1.0, f"{summary.portfolio_sharpe:.2f}")}
   </div>
   <div class="target-item">
     <div class="label">Max Drawdown &lt; 20%</div>
-    {badge(summary.portfolio_max_dd<20, f'{summary.portfolio_max_dd:.1f}%')}
+    {badge(summary.portfolio_max_dd < 20, f"{summary.portfolio_max_dd:.1f}%")}
   </div>
   <div class="target-item">
     <div class="label">Positive CAGR</div>
-    {badge(summary.portfolio_cagr>0, f'{summary.portfolio_cagr:.1f}%')}
+    {badge(summary.portfolio_cagr > 0, f"{summary.portfolio_cagr:.1f}%")}
   </div>
   <div class="target-item">
     <div class="label">Short Trades &gt; 0</div>
-    {badge(summary.short_trades>0, f'{summary.short_trades} trades')}
+    {badge(summary.short_trades > 0, f"{summary.short_trades} trades")}
   </div>
 </div>
 </div>

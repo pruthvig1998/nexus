@@ -13,6 +13,7 @@
 <!-- ═══════════════════════════════════════════════════════════════════════════ -->
 
 [![CI](https://img.shields.io/github/actions/workflow/status/pruthvig1998/nexus/ci.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=CI&color=22C55E)](https://github.com/pruthvig1998/nexus/actions)
+[![Coverage](https://codecov.io/gh/pruthvig1998/nexus/branch/main/graph/badge.svg)](https://codecov.io/gh/pruthvig1998/nexus)
 [![Python](https://img.shields.io/badge/Python-3.11+-0F172A?style=for-the-badge&logo=python&logoColor=F59E0B)](https://www.python.org/)
 [![Brokers](https://img.shields.io/badge/Brokers-Alpaca%20%C2%B7%20Moomoo%20%C2%B7%20IBKR%20%C2%B7%20Webull-1E293B?style=for-the-badge&logo=bitcoin&logoColor=C5A55A)](https://alpaca.markets/)
 [![Claude](https://img.shields.io/badge/AI-Claude%20Opus%204.6-8B5CF6?style=for-the-badge&logo=anthropic&logoColor=white)](https://anthropic.com/)

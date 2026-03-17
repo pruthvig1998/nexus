@@ -32,6 +32,7 @@ IBKR advantages over Alpaca
 - Much lower margin rates than Alpaca
 - Options, futures, forex, bonds — not just equities
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -67,17 +68,17 @@ class IBKRBroker(BaseBroker):
     def __init__(
         self,
         host: str = "127.0.0.1",
-        port: int = 7497,          # 7497=TWS paper, 7496=TWS live, 4002=IB GW paper
+        port: int = 7497,  # 7497=TWS paper, 7496=TWS live, 4002=IB GW paper
         client_id: int = 1,
         paper: bool = True,
         timeout: int = 20,
     ) -> None:
-        self.host      = host
-        self.port      = port
+        self.host = host
+        self.port = port
         self.client_id = client_id
-        self.paper     = paper
-        self.timeout   = timeout
-        self._ib       = None
+        self.paper = paper
+        self.timeout = timeout
+        self._ib = None
         self._connected = False
 
     @property
@@ -89,23 +90,32 @@ class IBKRBroker(BaseBroker):
     async def connect(self) -> bool:
         try:
             import ib_insync as ibs
+
             self._ib = ibs.IB()
             await self._ib.connectAsync(
-                self.host, self.port,
+                self.host,
+                self.port,
                 clientId=self.client_id,
                 timeout=self.timeout,
             )
             self._connected = True
-            log.info("IBKR connected", host=self.host, port=self.port,
-                     paper=self.paper, account=self._account_id())
+            log.info(
+                "IBKR connected",
+                host=self.host,
+                port=self.port,
+                paper=self.paper,
+                account=self._account_id(),
+            )
             return True
         except ImportError:
-            log.warning("ib_insync not installed",
-                        hint="pip install ib_insync")
+            log.warning("ib_insync not installed", hint="pip install ib_insync")
             return False
         except Exception as e:
-            log.error("IBKR connect failed", error=str(e),
-                      hint="Is TWS/IB Gateway running with API enabled?")
+            log.error(
+                "IBKR connect failed",
+                error=str(e),
+                hint="Is TWS/IB Gateway running with API enabled?",
+            )
             return False
 
     async def disconnect(self) -> None:
@@ -128,15 +138,16 @@ class IBKRBroker(BaseBroker):
             # and compare to NYSE hours (9:30–16:00 ET Mon–Fri)
             import datetime
             import zoneinfo
+
             et = zoneinfo.ZoneInfo("America/New_York")
             now = datetime.datetime.now(tz=et)
-            if now.weekday() >= 5:          # Sat/Sun
+            if now.weekday() >= 5:  # Sat/Sun
                 return False
-            market_open  = now.replace(hour=9,  minute=30, second=0, microsecond=0)
-            market_close = now.replace(hour=16, minute=0,  second=0, microsecond=0)
+            market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
+            market_close = now.replace(hour=16, minute=0, second=0, microsecond=0)
             return market_open <= now <= market_close
         except Exception:
-            return True   # assume open on error
+            return True  # assume open on error
 
     # ── Quotes ─────────────────────────────────────────────────────────────────
 
@@ -145,20 +156,24 @@ class IBKRBroker(BaseBroker):
             return None
         try:
             import ib_insync as ibs
+
             contract = ibs.Stock(ticker, "SMART", "USD")
             self._ib.qualifyContracts(contract)
             ticker_data = self._ib.reqMktData(contract, "", False, False)
-            await asyncio.sleep(1)          # allow data snapshot to arrive
-            bid  = float(ticker_data.bid  or 0)
-            ask  = float(ticker_data.ask  or 0)
+            await asyncio.sleep(1)  # allow data snapshot to arrive
+            bid = float(ticker_data.bid or 0)
+            ask = float(ticker_data.ask or 0)
             last = float(ticker_data.last or (bid + ask) / 2)
             self._ib.cancelMktData(contract)
             return Quote(
-                ticker=ticker, bid=bid, ask=ask, last=last,
+                ticker=ticker,
+                bid=bid,
+                ask=ask,
+                last=last,
                 volume=int(ticker_data.volume or 0),
                 open=float(ticker_data.open or 0),
                 high=float(ticker_data.high or 0),
-                low=float(ticker_data.low  or 0),
+                low=float(ticker_data.low or 0),
                 prev_close=float(ticker_data.close or 0),
             )
         except Exception as e:
@@ -188,14 +203,23 @@ class IBKRBroker(BaseBroker):
                     continue
                 qty = float(p.position)
                 side = "SHORT" if qty < 0 else "LONG"
-                result.append(Position(
-                    ticker=p.contract.symbol,
-                    shares=abs(qty),
-                    avg_cost=float(p.avgCost),
-                    current_price=float(p.marketPrice) if hasattr(p, 'marketPrice') and p.marketPrice not in (None, float('nan'), 0) else (float(p.marketValue) / abs(p.position) if hasattr(p, 'marketValue') and p.marketValue and abs(qty) > 0 else float(p.avgCost)),
-                    broker=self.name,
-                    side=side,
-                ))
+                result.append(
+                    Position(
+                        ticker=p.contract.symbol,
+                        shares=abs(qty),
+                        avg_cost=float(p.avgCost),
+                        current_price=float(p.marketPrice)
+                        if hasattr(p, "marketPrice")
+                        and p.marketPrice not in (None, float("nan"), 0)
+                        else (
+                            float(p.marketValue) / abs(p.position)
+                            if hasattr(p, "marketValue") and p.marketValue and abs(qty) > 0
+                            else float(p.avgCost)
+                        ),
+                        broker=self.name,
+                        side=side,
+                    )
+                )
             return result
         except Exception as e:
             log.error("IBKR get_positions failed", error=str(e))
@@ -204,14 +228,11 @@ class IBKRBroker(BaseBroker):
     async def get_account_info(self) -> AccountInfo:
         try:
             account = self._account_id()
-            summary = {
-                s.tag: s.value
-                for s in self._ib.accountSummary(account)
-            }
-            cash     = float(summary.get("TotalCashValue", 0))
-            net_liq  = float(summary.get("NetLiquidation", 0))
-            buy_pwr  = float(summary.get("BuyingPower", 0))
-            day_pnl  = float(summary.get("RealizedPnL", 0))
+            summary = {s.tag: s.value for s in self._ib.accountSummary(account)}
+            cash = float(summary.get("TotalCashValue", 0))
+            net_liq = float(summary.get("NetLiquidation", 0))
+            buy_pwr = float(summary.get("BuyingPower", 0))
+            day_pnl = float(summary.get("RealizedPnL", 0))
             total_pnl = float(summary.get("UnrealizedPnL", 0))
             return AccountInfo(
                 broker=self.name,
@@ -229,17 +250,22 @@ class IBKRBroker(BaseBroker):
     # ── Orders ─────────────────────────────────────────────────────────────────
 
     async def place_order(
-        self, ticker: str, side: OrderSide, qty: float,
+        self,
+        ticker: str,
+        side: OrderSide,
+        qty: float,
         order_type: OrderType = OrderType.LIMIT,
         limit_price: Optional[float] = None,
     ) -> OrderResult:
         if not self.is_connected:
-            return OrderResult("", ticker, side, qty, 0, 0,
-                               OrderStatus.REJECTED, self.name, "Not connected")
+            return OrderResult(
+                "", ticker, side, qty, 0, 0, OrderStatus.REJECTED, self.name, "Not connected"
+            )
         try:
             import ib_insync as ibs
+
             contract = ibs.Stock(ticker, "SMART", "USD")
-            action   = "BUY" if side == OrderSide.BUY else "SELL"
+            action = "BUY" if side == OrderSide.BUY else "SELL"
 
             if order_type == OrderType.LIMIT and limit_price:
                 order = ibs.LimitOrder(action, int(qty), round(limit_price, 2))
@@ -247,7 +273,7 @@ class IBKRBroker(BaseBroker):
                 order = ibs.MarketOrder(action, int(qty))
 
             trade = self._ib.placeOrder(contract, order)
-            await asyncio.sleep(0.5)   # allow initial fill status
+            await asyncio.sleep(0.5)  # allow initial fill status
 
             status = self._map_status(str(trade.orderStatus.status))
             return OrderResult(
@@ -262,14 +288,12 @@ class IBKRBroker(BaseBroker):
             )
         except Exception as e:
             log.error("IBKR place_order failed", ticker=ticker, error=str(e))
-            return OrderResult("", ticker, side, qty, 0, 0,
-                               OrderStatus.REJECTED, self.name, str(e))
+            return OrderResult("", ticker, side, qty, 0, 0, OrderStatus.REJECTED, self.name, str(e))
 
     async def cancel_order(self, order_id: str) -> bool:
         try:
             order = next(
-                (t.order for t in self._ib.trades()
-                 if str(t.order.orderId) == order_id),
+                (t.order for t in self._ib.trades() if str(t.order.orderId) == order_id),
                 None,
             )
             if order:
@@ -282,13 +306,13 @@ class IBKRBroker(BaseBroker):
     async def get_order_status(self, order_id: str) -> OrderResult:
         try:
             trade = next(
-                (t for t in self._ib.trades()
-                 if str(t.order.orderId) == order_id),
+                (t for t in self._ib.trades() if str(t.order.orderId) == order_id),
                 None,
             )
             if not trade:
-                return OrderResult(order_id, "", OrderSide.BUY, 0, 0, 0,
-                                   OrderStatus.CANCELLED, self.name)
+                return OrderResult(
+                    order_id, "", OrderSide.BUY, 0, 0, 0, OrderStatus.CANCELLED, self.name
+                )
             status = self._map_status(str(trade.orderStatus.status))
             return OrderResult(
                 order_id=order_id,
@@ -302,17 +326,18 @@ class IBKRBroker(BaseBroker):
             )
         except Exception as e:
             log.error("IBKR get_order_status failed", error=str(e))
-            return OrderResult(order_id, "", OrderSide.BUY, 0, 0, 0,
-                               OrderStatus.REJECTED, self.name)
+            return OrderResult(
+                order_id, "", OrderSide.BUY, 0, 0, 0, OrderStatus.REJECTED, self.name
+            )
 
     @staticmethod
     def _map_status(ibkr_status: str) -> OrderStatus:
         return {
-            "Submitted":       OrderStatus.SUBMITTED,
-            "PreSubmitted":    OrderStatus.SUBMITTED,
+            "Submitted": OrderStatus.SUBMITTED,
+            "PreSubmitted": OrderStatus.SUBMITTED,
             "PartiallyFilled": OrderStatus.PARTIAL,
-            "Filled":          OrderStatus.FILLED,
-            "Cancelled":       OrderStatus.CANCELLED,
-            "ApiCancelled":    OrderStatus.CANCELLED,
-            "Inactive":        OrderStatus.CANCELLED,
+            "Filled": OrderStatus.FILLED,
+            "Cancelled": OrderStatus.CANCELLED,
+            "ApiCancelled": OrderStatus.CANCELLED,
+            "Inactive": OrderStatus.CANCELLED,
         }.get(ibkr_status, OrderStatus.PENDING)

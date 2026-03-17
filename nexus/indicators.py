@@ -11,6 +11,7 @@ v3.2 additions:
 5. adr(): Average Daily Range — used by ORB for compression filtering
 6. rsi_series(): Full RSI series — used by mean reversion for divergence detection
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -100,8 +101,7 @@ def golden_cross(prices: pd.Series, fast: int = 20, slow: int = 50) -> Optional[
     return None
 
 
-def macd(prices: pd.Series, fast: int = 12, slow: int = 26,
-         signal_period: int = 9) -> MACDResult:
+def macd(prices: pd.Series, fast: int = 12, slow: int = 26, signal_period: int = 9) -> MACDResult:
     if len(prices) < slow + signal_period:
         return MACDResult(0, 0, 0, False, False)
     ema_fast = prices.ewm(span=fast, adjust=False).mean()
@@ -120,8 +120,7 @@ def macd(prices: pd.Series, fast: int = 12, slow: int = 26,
     )
 
 
-def bollinger_bands(prices: pd.Series, period: int = 20,
-                    num_std: float = 2.0) -> BollingerResult:
+def bollinger_bands(prices: pd.Series, period: int = 20, num_std: float = 2.0) -> BollingerResult:
     if len(prices) < period:
         p = float(prices.iloc[-1]) if len(prices) > 0 else 0.0
         return BollingerResult(p, p, p, 0, 0.5, False, False)
@@ -134,23 +133,35 @@ def bollinger_bands(prices: pd.Series, period: int = 20,
     bandwidth = (upper - lower) / middle if middle != 0 else 0
     pct_b = (last - lower) / (upper - lower) if upper != lower else 0.5
     return BollingerResult(
-        upper=upper, middle=middle, lower=lower,
-        bandwidth=bandwidth, pct_b=pct_b,
-        above_upper=last > upper, below_lower=last < lower,
+        upper=upper,
+        middle=middle,
+        lower=lower,
+        bandwidth=bandwidth,
+        pct_b=pct_b,
+        above_upper=last > upper,
+        below_lower=last < lower,
     )
 
 
-def atr(high: pd.Series, low: pd.Series, close: pd.Series,
-        period: int = 14, entry_price: float = 0.0,
-        multiplier: float = 1.5) -> ATRResult:
+def atr(
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    period: int = 14,
+    entry_price: float = 0.0,
+    multiplier: float = 1.5,
+) -> ATRResult:
     if len(close) < period + 1:
         return ATRResult(0.0, entry_price, entry_price)
     prev_close = close.shift(1)
-    tr = pd.concat([
-        high - low,
-        (high - prev_close).abs(),
-        (low - prev_close).abs(),
-    ], axis=1).max(axis=1)
+    tr = pd.concat(
+        [
+            high - low,
+            (high - prev_close).abs(),
+            (low - prev_close).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
     atr_val = float(tr.ewm(span=period, adjust=False).mean().iloc[-1])
     return ATRResult(
         value=atr_val,
