@@ -27,6 +27,24 @@ class DiscordConfig:
 
 
 @dataclass
+class TwitterConfig:
+    accounts: List[str] = field(default_factory=lambda: [
+        x.strip() for x in os.getenv("TWITTER_ACCOUNTS", "").split(",") if x.strip()
+    ])
+    poll_interval: int = field(default_factory=lambda: int(os.getenv("TWITTER_POLL_INTERVAL", "20")))
+    nitter_instances: List[str] = field(default_factory=lambda: [
+        x.strip() for x in os.getenv(
+            "NITTER_INSTANCES",
+            "nitter.poast.org,nitter.privacydev.net,nitter.cz,"
+            "nitter.net,nitter.1d4.us,nitter.kavin.rocks,"
+            "nitter.unixfox.eu,nitter.domain.glass"
+        ).split(",") if x.strip()
+    ])
+    min_score: float = 0.55
+    use_llm_parsing: bool = False
+
+
+@dataclass
 class AlpacaConfig:
     api_key: str = field(default_factory=lambda: os.getenv("ALPACA_API_KEY", ""))
     secret_key: str = field(default_factory=lambda: os.getenv("ALPACA_SECRET_KEY", ""))
@@ -103,6 +121,7 @@ class NEXUSConfig:
     risk: RiskConfig = field(default_factory=RiskConfig)
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
     discord: DiscordConfig = field(default_factory=DiscordConfig)
+    twitter: TwitterConfig = field(default_factory=TwitterConfig)
     db_path: str = "nexus.db"
     log_level: str = "INFO"
 

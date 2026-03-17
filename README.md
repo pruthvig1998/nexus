@@ -26,7 +26,7 @@
 <!-- ═══════════════════════════════════════════════════════════════════════════ -->
 
 <a href="https://github.com/pruthvig1998/nexus">
-  <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&size=22&pause=1000&color=C5A55A&center=true&vCenter=true&width=750&lines=NEXUS+v3+%E2%80%94+Institutional+Algorithmic+Trading;Multi-Broker+%C2%B7+Long+%2F+Short+%C2%B7+AI-Powered;Kelly+%2B+ATR+Position+Sizing+%C2%B7+4-Layer+Risk;Sharpe%3A+2.90+%C2%B7+CAGR%3A+33.5%25+%C2%B7+Max+DD%3A+1.5%25;15-Year+Walk-Forward+Validated+%C2%B7+20+Tickers" alt="Typing SVG" />
+  <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&size=22&pause=1000&color=C5A55A&center=true&vCenter=true&width=750&lines=NEXUS+v3+%E2%80%94+Institutional+Algorithmic+Trading;7+Strategies+%C2%B7+Multi-Broker+%C2%B7+AI-Powered;Discord+%2B+Twitter+Feed+%C2%B7+4-Layer+Risk;Sharpe%3A+2.90+%C2%B7+CAGR%3A+33.5%25+%C2%B7+Max+DD%3A+1.5%25;15-Year+Walk-Forward+Validated+%C2%B7+20+Tickers" alt="Typing SVG" />
 </a>
 
 <br/><br/>
@@ -36,9 +36,9 @@
 <td>
 
 > **A production-grade long/short algorithmic trading system** built in Python.
-> Combines momentum, mean reversion, IronGrid, news sentiment, and AI-driven
-> fundamental analysis with institutional-quality risk management, multi-broker
-> execution, Discord integration, and real-time portfolio tracking.
+> Combines momentum, mean reversion, ORB, IronGrid, event calendar, news sentiment,
+> and AI-driven fundamental analysis with institutional-quality risk management,
+> multi-broker execution, Discord + Twitter feed integration, and real-time portfolio tracking.
 
 </td>
 </tr>
@@ -72,13 +72,13 @@ order routing and position management
 </td>
 <td width="33%" align="center">
 <br/>
-<strong>5 STRATEGY ENGINES</strong>
+<strong>7 STRATEGY ENGINES</strong>
 <br/><br/>
-Momentum &middot; Mean Reversion
+Momentum &middot; Mean Reversion &middot; ORB
 <br/>
-IronGrid &middot; News Sentiment
+IronGrid &middot; Event Calendar
 <br/>
-AI Fundamental (Claude Opus 4.6)
+News Sentiment &middot; AI Fundamental
 <br/><br/>
 </td>
 <td width="33%" align="center">
@@ -107,13 +107,13 @@ Exposure caps &middot; Circuit breakers
 </td>
 <td width="33%" align="center">
 <br/>
-<strong>DISCORD INTEGRATION</strong>
+<strong>SOCIAL FEED INTEGRATION</strong>
 <br/><br/>
-Live trade feed to Discord channels
+Discord bot + Twitter via Nitter RSS
 <br/>
-Export loader for historical signal replay
+Parse messages and tweets for signals
 <br/>
-Real-time P&L and position updates
+No API keys needed for Twitter
 <br/><br/>
 </td>
 <td width="33%" align="center">
@@ -155,7 +155,7 @@ Full reproducibility
 <br/>
 <strong>EXTENSIBLE ARCHITECTURE</strong>
 <br/><br/>
-15 core modules &middot; Clean interfaces
+19 core modules &middot; Clean interfaces
 <br/>
 Add brokers, strategies, indicators
 <br/>
@@ -291,7 +291,9 @@ pip install -e ".[dev]"
   ║          │            │                 │             │                    ║
   ║          │            │  Momentum       │             │                    ║
   ║          │            │  Mean Reversion │             │                    ║
+  ║          │            │  ORB            │             │                    ║
   ║          │            │  IronGrid       │             │                    ║
+  ║          │            │  Event Calendar │             │                    ║
   ║          │            │  News Sentiment │             │                    ║
   ║          │            │  AI Fundamental │             │                    ║
   ║          │            └────────┬────────┘             │                    ║
@@ -303,10 +305,10 @@ pip install -e ".[dev]"
   ║   ╚══════════════════════════════════════════════════════════════╝         ║
   ║          │                     │                      │                    ║
   ║          ▼                     ▼                      ▼                    ║
-  ║   ┌──────────────┐    ┌───────────────┐    ┌──────────────────┐          ║
-  ║   │   Tracker    │    │  Dashboard    │    │  Discord Feed    │          ║
-  ║   │   P&L / Pos  │    │  Rich TUI     │    │  Live Alerts     │          ║
-  ║   └──────────────┘    └───────────────┘    └──────────────────┘          ║
+  ║   ┌────────────┐  ┌───────────┐  ┌──────────────┐  ┌──────────────┐     ║
+  ║   │  Tracker   │  │ Dashboard │  │ Discord Feed │  │ Twitter Feed │     ║
+  ║   │  P&L / Pos │  │ Rich TUI  │  │ Live Alerts  │  │ Nitter RSS   │     ║
+  ║   └────────────┘  └───────────┘  └──────────────┘  └──────────────┘     ║
   ║                                                                            ║
   ╚══════════════════════════════════════════════════════════════════════════════╝
 ```
@@ -396,7 +398,7 @@ Numerics
 <br/>
 <strong>discord.py</strong>
 <br/>
-Live Feed
+Discord Feed
 <br/><br/>
 </td>
 <td align="center" width="140">
@@ -408,9 +410,9 @@ Testing
 </td>
 <td align="center" width="140">
 <br/>
-<strong>ruff</strong>
+<strong>aiohttp</strong>
 <br/>
-Linting
+Async HTTP
 <br/><br/>
 </td>
 </tr>
@@ -427,7 +429,7 @@ Linting
 <!-- ═══════════════════════════════════════════════════════════════════════════ -->
 
 <details>
-<summary><h2>Architecture — 15 Core Modules</h2></summary>
+<summary><h2>Architecture — 19 Core Modules</h2></summary>
 
 <br/>
 
@@ -469,10 +471,10 @@ Linting
                 │
     ┌───────────┼───────────┬───────────┐
     │           │           │           │
-  ┌─▼──────┐ ┌─▼────────┐ ┌▼─────────┐ ┌▼──────────────┐
-  │tracker │ │ dashboard │ │ logger   │ │ discord_feed  │
-  │ P&L    │ │  Rich TUI │ │ JSON log │ │ discord_loader│
-  └────────┘ └──────────┘ └──────────┘ └───────────────┘
+  ┌─▼──────┐ ┌─▼────────┐ ┌▼─────────┐ ┌▼──────────────┐ ┌▼──────────────┐
+  │tracker │ │ dashboard │ │ logger   │ │ discord_feed  │ │ twitter_feed  │
+  │ P&L    │ │  Rich TUI │ │ JSON log │ │ discord_loader│ │ Nitter RSS    │
+  └────────┘ └──────────┘ └──────────┘ └───────────────┘ └───────────────┘
 ```
 
 <br/>
@@ -484,19 +486,22 @@ Linting
 | 3 | **Indicators** | `indicators.py` | RSI, MACD, Bollinger Bands, ATR, SMA, EMA |
 | 4 | **Strategy** | `strategy.py` | Signal generation: Momentum, Mean Reversion, AI Fundamental |
 | 5 | **IronGrid** | `strategy_irongrid.py` | Grid-based accumulation and distribution strategy |
-| 6 | **News Sentiment** | `strategy_news.py` | NLP-driven sentiment signals from news feeds |
-| 7 | **Risk** | `risk.py` | Kelly+ATR sizing, exposure caps, drawdown halt |
-| 8 | **Tracker** | `tracker.py` | Position tracking, realized/unrealized P&L |
-| 9 | **Broker (Alpaca)** | `broker.py` | Alpaca API wrapper (paper + live), order routing |
-| 10 | **Broker (Moomoo)** | `broker_moomoo.py` | Moomoo/Futu adapter |
-| 11 | **Broker (IBKR)** | `broker_ibkr.py` | Interactive Brokers TWS/Gateway adapter |
-| 12 | **Broker (Webull)** | `broker_webull.py` | Webull API adapter |
-| 13 | **Engine** | `engine.py` | Main trading loop, signal-to-order orchestration |
-| 14 | **Dashboard** | `dashboard.py` | Rich terminal UI: positions, signals, exposure |
-| 15 | **Discord** | `discord_feed.py` / `discord_loader.py` | Live trade feed + historical export loader |
-| 16 | **Backtest** | `backtest.py` | Historical simulation, performance analytics |
-| 17 | **Main** | `main.py` | CLI entrypoint, subcommand routing |
-| 18 | **\_\_main\_\_** | `__main__.py` | `python -m nexus` package runner |
+| 6 | **ORB** | `strategy_orb.py` | Opening Range Breakout with NR7 compression filter |
+| 7 | **Event Calendar** | `strategy_event.py` | Earnings/catalyst event trading with Claude AI scoring |
+| 8 | **News Sentiment** | `strategy_news.py` | NLP-driven sentiment signals from news feeds |
+| 9 | **Risk** | `risk.py` | Kelly+ATR sizing, exposure caps, drawdown halt |
+| 10 | **Tracker** | `tracker.py` | Position tracking, realized/unrealized P&L |
+| 11 | **Broker (Alpaca)** | `broker.py` | Alpaca API wrapper (paper + live), order routing |
+| 12 | **Broker (Moomoo)** | `broker_moomoo.py` | Moomoo/Futu adapter |
+| 13 | **Broker (IBKR)** | `broker_ibkr.py` | Interactive Brokers TWS/Gateway adapter |
+| 14 | **Broker (Webull)** | `broker_webull.py` | Webull API adapter |
+| 15 | **Engine** | `engine.py` | Main trading loop, signal-to-order orchestration |
+| 16 | **Dashboard** | `dashboard.py` | Rich terminal UI: positions, signals, exposure |
+| 17 | **Discord** | `discord_feed.py` / `discord_loader.py` | Live trade feed + historical export loader |
+| 18 | **Twitter** | `twitter_feed.py` | Nitter RSS polling, tweet signal extraction |
+| 19 | **Backtest** | `backtest.py` | Historical simulation, performance analytics |
+| 20 | **Main** | `main.py` | CLI entrypoint, subcommand routing |
+| 21 | **\_\_main\_\_** | `__main__.py` | `python -m nexus` package runner |
 
 </details>
 
@@ -525,6 +530,10 @@ Linting
 | **IronGrid** | Short | Price hits grid sell level in distribution zone | Grid buy level hit OR position cap reached | Intraday |
 | **News Sentiment** | Long | NLP sentiment score >= 0.7 on catalyst event | Sentiment decays below 0.4 OR time expiry | Event |
 | **News Sentiment** | Short | NLP sentiment score <= 0.3 on negative catalyst | Sentiment rises above 0.6 OR time expiry | Event |
+| **ORB** | Long | NR7 compression + breakout above range + volume surge | Opposite side of opening range | Daily |
+| **ORB** | Short | NR7 compression + breakdown below range + volume surge | Opposite side of opening range | Daily |
+| **Event Calendar** | Long | Earnings/catalyst + Claude AI scores bullish | Time decay or Claude reversal | Event |
+| **Event Calendar** | Short | Earnings/catalyst + Claude AI scores bearish | Time decay or Claude reversal | Event |
 | **AI Fundamental** | Long | Claude Opus 4.6 scores earnings/guidance >= 7/10 bullish | Score drops below 5 OR catalyst expires | Event |
 | **AI Fundamental** | Short | Claude Opus 4.6 scores earnings/guidance <= 3/10 bearish | Score rises above 5 OR catalyst expires | Event |
 
@@ -635,11 +644,11 @@ position_size  = min(shares, max_position_cap)
 <!-- ═══════════════════════════════════════════════════════════════════════════ -->
 
 <details>
-<summary><h2>Discord Integration</h2></summary>
+<summary><h2>Discord & Twitter Integration</h2></summary>
 
 <br/>
 
-NEXUS integrates with Discord for real-time trade notifications and historical signal management.
+NEXUS integrates with Discord and Twitter for real-time trade notifications, social signal extraction, and historical signal management.
 
 ### Live Feed (`discord_feed.py`)
 
@@ -659,12 +668,29 @@ Replays historical signals exported from Discord:
 python -m nexus load-discord --file signals_export.json --replay
 ```
 
+### Twitter / Nitter RSS Feed (`twitter_feed.py`)
+
+Monitors Twitter accounts via public Nitter RSS instances — no API key required:
+
+- Polls 8 Nitter instances every 20 seconds with automatic failover
+- Same signal parsing engine as Discord (tickers, direction keywords, proximity scoring)
+- Health tracking with 5-minute cooldown on failed instances
+- LRU deduplication (10,000 tweet cache)
+
+**Recommended accounts:** `@DeItaone` · `@unusual_whales` · `@zerohedge` · `@FirstSquawk` · `@LiveSquawk`
+
 ### Configuration
 
 ```env
+# Discord
 DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 DISCORD_CHANNEL_ID=your_channel_id
 DISCORD_BOT_TOKEN=your_bot_token          # optional, for loader
+
+# Twitter/Nitter (no API key needed)
+TWITTER_ACCOUNTS=DeItaone,unusual_whales,zerohedge
+TWITTER_POLL_INTERVAL=20
+NITTER_INSTANCES=nitter.poast.org,nitter.privacydev.net,...
 ```
 
 </details>
@@ -701,6 +727,12 @@ python -m nexus run --paper
 python -m nexus run --paper --broker moomoo
 python -m nexus run --paper --broker ibkr
 python -m nexus run --paper --broker webull
+
+# Enable Twitter feed monitoring
+python -m nexus run --paper --twitter
+
+# Enable both Discord and Twitter feeds
+python -m nexus run --paper --discord --twitter
 
 # Headless mode (CI / cron / server)
 python -m nexus run --paper --no-dashboard
@@ -742,7 +774,7 @@ python -m nexus load-discord --file signals_export.json --replay
 
 | Command | Description |
 |:--|:--|
-| `nexus run [--paper] [--broker NAME] [--no-dashboard]` | Start live/paper trading loop |
+| `nexus run [--paper] [--broker NAME] [--discord] [--twitter] [--no-dashboard]` | Start live/paper trading loop |
 | `nexus backtest -t TICKER [--years N] [-o FILE]` | Run historical backtest |
 | `nexus status` | Print open positions + daily P&L |
 | `nexus trades [--limit N]` | Show recent closed trades |
@@ -780,6 +812,10 @@ WEBULL_PASSWORD=your_password
 # Discord (optional)
 DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 DISCORD_BOT_TOKEN=your_bot_token
+
+# Twitter/Nitter (optional — no API key needed)
+TWITTER_ACCOUNTS=DeItaone,unusual_whales,zerohedge,FirstSquawk,LiveSquawk
+TWITTER_POLL_INTERVAL=20
 
 # General
 NEXUS_MODE=paper               # paper | live
@@ -952,7 +988,7 @@ NEXUS v3 — Where systematic meets intelligent.
 
 <br/>
 
-*5 Strategies &middot; 4 Brokers &middot; 15-Year Validated &middot; Production Ready*
+*7 Strategies &middot; 4 Brokers &middot; 15-Year Validated &middot; Production Ready*
 
 </td>
 </tr>

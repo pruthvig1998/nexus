@@ -85,7 +85,9 @@ def backtest(tickers, years, capital, output, log_level):
 @click.option("--log-level", default="INFO", show_default=True)
 @click.option("--discord", "use_discord", is_flag=True, default=False,
               help="Enable Discord channel monitoring for signals")
-def run(paper, broker_name, tickers, no_dashboard, scan_interval, log_level, use_discord):
+@click.option("--twitter", "use_twitter", is_flag=True, default=False,
+              help="Enable Twitter/Nitter RSS feed monitoring for signals")
+def run(paper, broker_name, tickers, no_dashboard, scan_interval, log_level, use_discord, use_twitter):
     """Start the live long/short trading engine with Rich dashboard."""
     from nexus.logger import setup_logging
     setup_logging(log_level)
@@ -152,6 +154,15 @@ def run(paper, broker_name, tickers, no_dashboard, scan_interval, log_level, use
         else:
             feed = None
 
+        if use_twitter:
+            from nexus.twitter_feed import TwitterFeed
+            twitter_feed = TwitterFeed(cfg.twitter, engine.get_signal_queue(),
+                                       news_strategy=engine.news_strategy)
+            tasks.append(twitter_feed.start())
+            click.echo("Twitter feed enabled — monitoring via Nitter RSS")
+        else:
+            twitter_feed = None
+
         try:
             await asyncio.gather(*tasks)
         except (KeyboardInterrupt, asyncio.CancelledError):
@@ -162,6 +173,8 @@ def run(paper, broker_name, tickers, no_dashboard, scan_interval, log_level, use
                 await dash.stop()
             if feed:
                 await feed.stop()
+            if twitter_feed:
+                await twitter_feed.stop()
 
     try:
         asyncio.run(_run())
