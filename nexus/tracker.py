@@ -300,6 +300,25 @@ class PortfolioTracker:
         )
         return partial_pnl
 
+    def update_trade_prices(self, trade_id: str, stop_price: Optional[float] = None, target_price: Optional[float] = None) -> bool:
+        """Update stop and/or target price on an open trade."""
+        with self._conn() as conn:
+            row = conn.execute("SELECT id FROM trades WHERE id=? AND closed_at IS NULL", (trade_id,)).fetchone()
+            if not row:
+                return False
+            updates = []
+            params = []
+            if stop_price is not None:
+                updates.append("stop_price=?")
+                params.append(stop_price)
+            if target_price is not None:
+                updates.append("target_price=?")
+                params.append(target_price)
+            if updates:
+                params.append(trade_id)
+                conn.execute(f"UPDATE trades SET {','.join(updates)} WHERE id=?", params)  # noqa: S608
+        return True
+
     def update_grid_level(self, trade_id: str, level: int, trailing_stop: float = 0.0) -> None:
         """Update IronGrid level and trailing stop for a trade."""
         with self._conn() as conn:

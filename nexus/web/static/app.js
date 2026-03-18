@@ -22,6 +22,10 @@ document.addEventListener("alpine:init", () => {
     tradeSearch: "",
     tradePage: 1,
     tradesPerPage: 50,
+    brokerOrders: [],
+    brokerDeals: [],
+    brokerTab: 'orders',
+    editingTrade: null,
     _pnlChart: null,
     _dailyChart: null,
 
@@ -118,6 +122,38 @@ document.addEventListener("alpine:init", () => {
       }
     },
 
+    async fetchBrokerData() {
+      try {
+        const [orders, deals] = await Promise.all([
+          this.api('/api/broker-orders?limit=50'),
+          this.api('/api/broker-deals?limit=50'),
+        ]);
+        this.brokerOrders = orders;
+        this.brokerDeals = deals;
+      } catch (e) { console.error('Broker data fetch error:', e); }
+    },
+
+    async modifyTrade(tradeId, stopPrice, targetPrice) {
+      try {
+        const body = { trade_id: tradeId };
+        if (stopPrice !== undefined && stopPrice !== '') body.stop_price = parseFloat(stopPrice);
+        if (targetPrice !== undefined && targetPrice !== '') body.target_price = parseFloat(targetPrice);
+        const resp = await fetch('/api/modify-trade', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await resp.json();
+        if (data.success) {
+          this.editingTrade = null;
+          this.addActivity('MODIFIED', `Trade ${tradeId.substring(0,8)} updated`, 'amber');
+          this.fetchAll();
+        } else {
+          alert('Failed: ' + (data.error || 'Unknown error'));
+        }
+      } catch (e) { alert('Error: ' + e.message); }
+    },
+
     fmtContract(trade) {
       if (!trade.instrument_type || trade.instrument_type === 'EQUITY') return '';
       const right = trade.instrument_type === 'CALL' ? 'C' : 'P';
@@ -129,6 +165,7 @@ document.addEventListener("alpine:init", () => {
     switchView(v) {
       this.view = v;
       if (v === "performance") this.$nextTick(() => { this.renderPnlChart(); this.renderDailyChart(); });
+      if (v === "broker-orders") this.fetchBrokerData();
     },
 
     get brokerConnected() { return this.account.broker_connected === true; },

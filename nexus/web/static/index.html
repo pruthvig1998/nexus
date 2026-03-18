@@ -71,6 +71,8 @@
             <button class="tab-btn" :class="view==='dashboard'&&'active'" @click="switchView('dashboard')">Dashboard</button>
             <button class="tab-btn" :class="view==='performance'&&'active'" @click="switchView('performance')">Performance</button>
             <button class="tab-btn" :class="view==='trades'&&'active'" @click="switchView('trades')">Trade History</button>
+            <button class="tab-btn" :class="view==='broker-orders'&&'active'" @click="switchView('broker-orders')">Broker Orders</button>
+            <button class="tab-btn" :class="view==='scanner'&&'active'" @click="switchView('scanner')">Scanner</button>
         </div>
     </nav>
 
@@ -223,7 +225,8 @@
                     <span>DB Trades: <span class="text-nexus-mid" x-text="openTrades.length+' open / '+closedTrades.length+' closed'"></span></span>
                 </div>
                 <div class="flex items-center gap-4">
-                    <span>Watchlist: <span class="text-nexus-mid" x-text="(status.watchlist||[]).join(', ')||'none'"></span></span>
+                    <span>Tickers: <span class="text-nexus-mid" x-text="(status.total_tickers||((status.watchlist||[]).length))+' ('+(status.watchlist||[]).length+' watchlist'+(status.scanner_tickers&&status.scanner_tickers.length?' + '+status.scanner_tickers.length+' scanner':'')+')'"></span></span>
+                    <span x-show="status.vix">VIX: <span class="text-nexus-mid" :style="(status.vix||20)>25?'color:var(--nexus-red)':''" x-text="(status.vix||20).toFixed(1)"></span></span>
                 </div>
             </div>
         </div>
@@ -272,6 +275,7 @@
                         <th>Opened</th><th>Ticker</th><th>Contract</th><th>Side</th><th class="text-right">Qty</th><th class="text-right">Entry</th><th class="text-right">Stop</th><th class="text-right">Target</th>
                         <th class="text-right" x-show="tradeFilter==='closed'">Exit</th><th class="text-right" x-show="tradeFilter==='closed'">P&L</th><th x-show="tradeFilter==='closed'">Reason</th>
                         <th>Strategy</th><th class="text-right">Score</th>
+                        <th x-show="tradeFilter==='open'"></th>
                     </tr></thead>
                     <tbody><template x-for="t in pagedTrades" :key="t.id"><tr>
                         <td class="text-nexus-dim" x-text="fmtDate(t.opened_at)"></td>
@@ -291,6 +295,19 @@
                         <td x-show="tradeFilter==='closed'" class="text-nexus-dim text-xs" x-text="t.exit_reason||'-'"></td>
                         <td class="text-nexus-dim text-xs" x-text="t.strategy"></td>
                         <td class="text-right" x-text="Number(t.signal_score||0).toFixed(2)"></td>
+                        <td x-show="tradeFilter==='open'" class="text-right">
+                            <div class="flex gap-1 justify-end">
+                                <button @click="closePosition(t.ticker, t.option_code)" class="px-2 py-1 text-[10px] rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30 transition-colors cursor-pointer">Close</button>
+                                <button @click="editingTrade = editingTrade === t.id ? null : t.id" class="px-2 py-1 text-[10px] rounded bg-nexus-border/20 text-nexus-mid hover:bg-nexus-border/30 border border-nexus-border/30 transition-colors cursor-pointer">Edit</button>
+                            </div>
+                            <div x-show="editingTrade === t.id" class="mt-2 p-2 bg-nexus-bg rounded border border-nexus-border/30 text-left" @click.stop>
+                                <div class="grid grid-cols-2 gap-2 mb-2">
+                                    <div><label class="text-[10px] text-nexus-dim block mb-1">Stop Price</label><input type="number" step="0.01" :value="t.stop_price" x-ref="stop" class="w-full bg-nexus-card border border-nexus-border/30 rounded px-2 py-1 text-xs font-mono text-nexus-bright"></div>
+                                    <div><label class="text-[10px] text-nexus-dim block mb-1">Target Price</label><input type="number" step="0.01" :value="t.target_price" x-ref="target" class="w-full bg-nexus-card border border-nexus-border/30 rounded px-2 py-1 text-xs font-mono text-nexus-bright"></div>
+                                </div>
+                                <button @click="modifyTrade(t.id, $refs.stop?.value, $refs.target?.value)" class="w-full px-2 py-1 text-[10px] rounded bg-nexus-gold/20 text-nexus-gold hover:bg-nexus-gold/30 border border-nexus-gold/30 transition-colors cursor-pointer">Save Changes</button>
+                            </div>
+                        </td>
                     </tr></template></tbody></table>
                 </div>
                 <div x-show="filteredTrades.length===0" class="empty-state">
@@ -304,6 +321,117 @@
                         <button class="px-3 py-1 rounded border border-nexus-border/30 hover:bg-nexus-hover disabled:opacity-30" :disabled="tradePage<=1" @click="tradePage--">Prev</button>
                         <button class="px-3 py-1 rounded border border-nexus-border/30 hover:bg-nexus-hover disabled:opacity-30" :disabled="tradePage>=totalTradePages" @click="tradePage++">Next</button>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Broker Orders View -->
+        <div x-show="view==='broker-orders'" x-cloak>
+            <div class="flex items-center gap-4 mb-4">
+                <div class="flex rounded-lg overflow-hidden border border-nexus-border/30">
+                    <button class="px-4 py-2 text-sm font-mono transition-colors cursor-pointer" :class="brokerTab==='orders'?'bg-nexus-border/30 text-nexus-bright':'text-nexus-dim hover:text-nexus-mid'" @click="brokerTab='orders'">Orders</button>
+                    <button class="px-4 py-2 text-sm font-mono transition-colors cursor-pointer" :class="brokerTab==='deals'?'bg-nexus-border/30 text-nexus-bright':'text-nexus-dim hover:text-nexus-mid'" @click="brokerTab='deals'">Executions</button>
+                </div>
+                <button @click="fetchBrokerData()" class="px-3 py-2 text-xs font-mono rounded border border-nexus-border/30 text-nexus-mid hover:text-nexus-bright hover:bg-nexus-hover transition-colors cursor-pointer">Refresh</button>
+            </div>
+
+            <!-- Orders Table -->
+            <div class="card" x-show="brokerTab==='orders'">
+                <div class="card-header flex items-center justify-between">
+                    <span>Broker Order History</span>
+                    <span class="text-nexus-mid text-xs font-mono" x-text="brokerOrders.length+' orders'"></span>
+                </div>
+                <div x-show="brokerOrders.length>0" class="overflow-auto" style="max-height:500px">
+                    <table class="data-table font-mono"><thead><tr>
+                        <th>Time</th><th>Ticker</th><th>Side</th><th class="text-right">Qty</th><th class="text-right">Filled</th><th class="text-right">Price</th><th>Type</th><th>Status</th>
+                    </tr></thead>
+                    <tbody><template x-for="o in brokerOrders" :key="o.order_id"><tr>
+                        <td class="text-nexus-dim text-xs" x-text="o.created_at ? o.created_at.substring(0,16).replace('T',' ') : '-'"></td>
+                        <td class="font-semibold" x-text="o.ticker"></td>
+                        <td><span class="badge" :class="o.side==='BUY'?'badge-long':'badge-short'" x-text="o.side"></span></td>
+                        <td class="text-right" x-text="o.qty"></td>
+                        <td class="text-right" x-text="o.filled_qty||0"></td>
+                        <td class="text-right" x-text="'$'+Number(o.price||0).toFixed(2)"></td>
+                        <td class="text-nexus-dim text-xs" x-text="o.order_type||'-'"></td>
+                        <td>
+                            <span class="px-1.5 py-0.5 text-[10px] rounded"
+                                :class="{'bg-green-500/20 text-green-400': o.status==='FILLED', 'bg-amber-500/20 text-amber-400': o.status==='SUBMITTED' || o.status==='PENDING', 'bg-red-500/20 text-red-400': o.status==='CANCELLED' || o.status==='REJECTED', 'bg-nexus-border/30 text-nexus-mid': !['FILLED','SUBMITTED','PENDING','CANCELLED','REJECTED'].includes(o.status)}"
+                                x-text="o.status"></span>
+                        </td>
+                    </tr></template></tbody></table>
+                </div>
+                <div x-show="brokerOrders.length===0" class="empty-state" style="padding:30px">
+                    <div class="title">No broker orders</div>
+                    <div class="desc">Orders placed via Moomoo will appear here. Click Refresh to update.</div>
+                </div>
+            </div>
+
+            <!-- Deals/Executions Table -->
+            <div class="card" x-show="brokerTab==='deals'">
+                <div class="card-header flex items-center justify-between">
+                    <span>Broker Executions (Fills)</span>
+                    <span class="text-nexus-mid text-xs font-mono" x-text="brokerDeals.length+' fills'"></span>
+                </div>
+                <div x-show="brokerDeals.length>0" class="overflow-auto" style="max-height:500px">
+                    <table class="data-table font-mono"><thead><tr>
+                        <th>Time</th><th>Ticker</th><th>Side</th><th class="text-right">Qty</th><th class="text-right">Price</th>
+                    </tr></thead>
+                    <tbody><template x-for="d in brokerDeals" :key="d.deal_id"><tr>
+                        <td class="text-nexus-dim text-xs" x-text="d.created_at ? d.created_at.substring(0,16).replace('T',' ') : '-'"></td>
+                        <td class="font-semibold" x-text="d.ticker"></td>
+                        <td><span class="badge" :class="d.side==='BUY'?'badge-long':'badge-short'" x-text="d.side"></span></td>
+                        <td class="text-right" x-text="d.qty"></td>
+                        <td class="text-right" x-text="'$'+Number(d.price||0).toFixed(2)"></td>
+                    </tr></template></tbody></table>
+                </div>
+                <div x-show="brokerDeals.length===0" class="empty-state" style="padding:30px">
+                    <div class="title">No broker executions</div>
+                    <div class="desc">Filled orders will appear here.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Scanner View -->
+        <div x-show="view==='scanner'" x-cloak>
+            <div class="grid grid-cols-2 gap-4 mb-4 grid-2col">
+                <div class="card">
+                    <div class="card-header flex items-center justify-between">
+                        <span>Static Watchlist</span>
+                        <span class="text-nexus-mid text-xs font-mono" x-text="(status.watchlist||[]).length+' tickers'"></span>
+                    </div>
+                    <div class="p-4">
+                        <div class="flex flex-wrap gap-2">
+                            <template x-for="t in (status.watchlist||[])" :key="t">
+                                <span class="px-2 py-1 text-xs font-mono rounded bg-nexus-border/20 text-nexus-bright border border-nexus-border/30" x-text="t"></span>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header flex items-center justify-between">
+                        <span>Scanner Discoveries</span>
+                        <span class="px-2 py-0.5 text-[10px] rounded" :class="status.scanner_enabled ? 'bg-green-500/20 text-green-400' : 'bg-nexus-border/20 text-nexus-dim'" x-text="status.scanner_enabled ? 'ACTIVE' : 'DISABLED'"></span>
+                    </div>
+                    <div class="p-4">
+                        <div x-show="(status.scanner_tickers||[]).length>0" class="flex flex-wrap gap-2">
+                            <template x-for="t in (status.scanner_tickers||[])" :key="t">
+                                <span class="px-2 py-1 text-xs font-mono rounded bg-nexus-gold/10 text-nexus-gold border border-nexus-gold/30" x-text="t"></span>
+                            </template>
+                        </div>
+                        <div x-show="(status.scanner_tickers||[]).length===0 && status.scanner_enabled" class="text-xs text-nexus-dim">Scanner is running — discoveries appear after the next scan cycle.</div>
+                        <div x-show="!status.scanner_enabled" class="text-xs text-nexus-dim">Enable with <span class="font-mono text-nexus-mid">--scan-universe</span> flag.</div>
+                    </div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header flex items-center justify-between">
+                    <span>Scan Stats</span>
+                </div>
+                <div class="p-4 grid grid-cols-4 gap-4 font-mono text-sm">
+                    <div><div class="text-nexus-dim text-xs mb-1">TOTAL TICKERS</div><div class="text-lg font-semibold" x-text="status.total_tickers||((status.watchlist||[]).length)"></div></div>
+                    <div><div class="text-nexus-dim text-xs mb-1">VIX</div><div class="text-lg font-semibold" :style="(status.vix||20)>25?'color:var(--nexus-red)':'color:var(--nexus-green)'" x-text="(status.vix||20).toFixed(1)"></div></div>
+                    <div><div class="text-nexus-dim text-xs mb-1">SCAN COUNT</div><div class="text-lg font-semibold" x-text="status.scan_count||0"></div></div>
+                    <div><div class="text-nexus-dim text-xs mb-1">DTE MODE</div><div class="text-lg font-semibold" x-text="status.options_enabled ? 'Auto (0DTE→LEAPS)' : 'N/A'"></div></div>
                 </div>
             </div>
         </div>

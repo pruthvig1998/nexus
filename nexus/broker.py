@@ -270,6 +270,14 @@ class BaseBroker(ABC):
             OrderStatus.REJECTED, self.name, f"{self.name} does not support options",
         )
 
+    async def get_order_history(self, limit: int = 50) -> List[dict]:
+        """Get recent order history from the broker."""
+        return []
+
+    async def get_deal_history(self, limit: int = 50) -> List[dict]:
+        """Get recent deal/execution history from the broker."""
+        return []
+
 
 # ── Alpaca ────────────────────────────────────────────────────────────────────
 

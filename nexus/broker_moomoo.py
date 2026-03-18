@@ -598,6 +598,116 @@ class MoomooBroker(BaseBroker):
                 OrderStatus.REJECTED, self.name, str(e),
             )
 
+    async def get_order_history(self, limit: int = 50) -> List[dict]:
+        """Get order history from Moomoo (current session + history)."""
+        if not await self._ensure_connected():
+            return []
+        try:
+            import moomoo as ft
+
+            env = ft.TrdEnv.SIMULATE if self.trade_env == MoomooTrdEnv.SIMULATE else ft.TrdEnv.REAL
+            result = []
+
+            # Current session orders
+            ret, data = await asyncio.to_thread(self._trade_ctx.order_list_query, trd_env=env)
+            if ret == ft.RET_OK and not data.empty:
+                for _, row in data.iterrows():
+                    result.append(self._parse_order_row(row))
+
+            # Historical orders (previous sessions)
+            try:
+                ret2, data2 = await asyncio.to_thread(
+                    self._trade_ctx.history_order_list_query,
+                    trd_env=env, status_filter_list=[], start="", end="",
+                )
+                if ret2 == ft.RET_OK and not data2.empty:
+                    existing_ids = {o["order_id"] for o in result}
+                    for _, row in data2.iterrows():
+                        parsed = self._parse_order_row(row)
+                        if parsed["order_id"] not in existing_ids:
+                            result.append(parsed)
+            except Exception:
+                pass  # history_order_list_query may not be available
+
+            # Sort by created_at descending
+            result.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+            return result[:limit]
+        except Exception as e:
+            log.error("Moomoo get_order_history failed", error=str(e))
+            return []
+
+    async def get_deal_history(self, limit: int = 50) -> List[dict]:
+        """Get deal/execution history from Moomoo."""
+        if not await self._ensure_connected():
+            return []
+        try:
+            import moomoo as ft
+
+            env = ft.TrdEnv.SIMULATE if self.trade_env == MoomooTrdEnv.SIMULATE else ft.TrdEnv.REAL
+            result = []
+
+            # Try current session deals first
+            try:
+                ret, data = await asyncio.to_thread(self._trade_ctx.deal_list_query, trd_env=env)
+                if ret == ft.RET_OK and not data.empty:
+                    for _, row in data.iterrows():
+                        result.append(self._parse_deal_row(row))
+            except Exception:
+                pass  # Simulated trade does not support deal list
+
+            # Try historical deals
+            try:
+                ret2, data2 = await asyncio.to_thread(
+                    self._trade_ctx.history_deal_list_query, trd_env=env,
+                )
+                if ret2 == ft.RET_OK and not data2.empty:
+                    existing_ids = {d["deal_id"] for d in result}
+                    for _, row in data2.iterrows():
+                        parsed = self._parse_deal_row(row)
+                        if parsed["deal_id"] not in existing_ids:
+                            result.append(parsed)
+            except Exception:
+                pass  # history_deal_list_query may not be available
+
+            result.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+            return result[:limit]
+        except Exception as e:
+            log.error("Moomoo get_deal_history failed", error=str(e))
+            return []
+
+    def _parse_order_row(self, row) -> dict:
+        """Parse a Moomoo order row into a standardized dict."""
+        trd_side_str = str(row.get("trd_side", "BUY")).upper()
+        side = "BUY" if "BUY" in trd_side_str else "SELL"
+        return {
+            "order_id": str(row.get("order_id", "")),
+            "ticker": _bare(str(row.get("code", ""))),
+            "stock_name": str(row.get("stock_name", "")),
+            "side": side,
+            "qty": float(row.get("qty", 0) or 0),
+            "filled_qty": float(row.get("dealt_qty", 0) or 0),
+            "price": float(row.get("price", 0) or 0),
+            "avg_fill_price": float(row.get("dealt_avg_price", 0) or 0),
+            "status": self._map_status(str(row.get("order_status", ""))).value,
+            "created_at": str(row.get("create_time", "")),
+            "updated_at": str(row.get("updated_time", "")),
+            "order_type": str(row.get("order_type", "")),
+        }
+
+    @staticmethod
+    def _parse_deal_row(row) -> dict:
+        """Parse a Moomoo deal row into a standardized dict."""
+        trd_side_str = str(row.get("trd_side", "BUY")).upper()
+        side = "BUY" if "BUY" in trd_side_str else "SELL"
+        return {
+            "deal_id": str(row.get("deal_id", "")),
+            "ticker": _bare(str(row.get("code", ""))),
+            "side": side,
+            "qty": float(row.get("qty", 0) or 0),
+            "price": float(row.get("price", 0) or 0),
+            "created_at": str(row.get("create_time", "")),
+        }
+
     @staticmethod
     def _map_status(futu_status: str) -> OrderStatus:
         """Map Futu order status string → NEXUS OrderStatus."""

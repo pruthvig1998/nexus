@@ -188,6 +188,10 @@ class NEXUSEngine:
     def price_cache(self) -> Dict[str, pd.DataFrame]:
         return self._price_cache
 
+    @property
+    def scanner_tickers(self) -> List[str]:
+        return self._scanner_tickers
+
     async def start(self) -> None:
         log.info(
             "NEXUS starting",

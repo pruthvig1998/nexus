@@ -38,6 +38,12 @@ class _FakeOptionsConfig:
     enabled = False
 
 
+class _FakeScannerConfig:
+    enabled = False
+    max_tickers = 20
+    scan_interval = 300
+
+
 class FakeConfig:
     """Minimal config for engine mock."""
 
@@ -48,6 +54,7 @@ class FakeConfig:
     log_level = "WARNING"
     db_path = ":memory:"
     options = _FakeOptionsConfig()
+    scanner = _FakeScannerConfig()
 
 
 class FakeEngine:
@@ -60,6 +67,8 @@ class FakeEngine:
         self._broker = AsyncMock()
         self._running = True
         self._scan_count = 42
+        self._scanner_tickers = []
+        self._vix = 20.0
 
     @property
     def tracker(self):
@@ -641,7 +650,7 @@ def test_tracker_original_shares_stored():
     from nexus.tracker import PortfolioTracker
 
     t = PortfolioTracker(":memory:")
-    tid = t.open_trade(
+    t.open_trade(
         broker="test",
         ticker="TSLA",
         side="LONG",

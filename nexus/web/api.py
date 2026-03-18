@@ -106,6 +106,10 @@ def create_app(engine: NEXUSEngine) -> FastAPI:
             "watchlist": engine._cfg.watchlist,
             "ws_clients": ws_manager.client_count,
             "options_enabled": engine._cfg.options.enabled,
+            "scanner_enabled": engine._cfg.scanner.enabled,
+            "scanner_tickers": getattr(engine, '_scanner_tickers', []),
+            "total_tickers": len(engine._cfg.watchlist) + len(getattr(engine, '_scanner_tickers', [])),
+            "vix": getattr(engine, '_vix', 20.0),
         }
 
     @app.get("/api/option-chain/{ticker}")
@@ -126,6 +130,61 @@ def create_app(engine: NEXUSEngine) -> FastAPI:
         except Exception as e:
             log.warning("Option chain fetch failed", ticker=ticker, error=str(e))
             return {"ticker": ticker.upper(), "error": str(e)}
+
+    @app.get("/api/scanner-tickers")
+    async def get_scanner_tickers():
+        return {
+            "watchlist": engine._cfg.watchlist,
+            "scanner": getattr(engine, '_scanner_tickers', []),
+            "total": len(engine._cfg.watchlist) + len(getattr(engine, '_scanner_tickers', [])),
+            "scanner_enabled": engine._cfg.scanner.enabled,
+        }
+
+    @app.get("/api/broker-orders")
+    async def get_broker_orders(limit: int = Query(default=50, ge=1, le=200)):
+        try:
+            orders = await engine.broker.get_order_history(limit)
+            return orders
+        except Exception as e:
+            log.warning("Broker orders fetch failed", error=str(e))
+            return []
+
+    @app.get("/api/broker-deals")
+    async def get_broker_deals(limit: int = Query(default=50, ge=1, le=200)):
+        try:
+            deals = await engine.broker.get_deal_history(limit)
+            return deals
+        except Exception as e:
+            log.warning("Broker deals fetch failed", error=str(e))
+            return []
+
+    @app.post("/api/modify-trade")
+    async def modify_trade(body: dict | None = None):
+        """Modify stop_price or target_price on an open trade."""
+        try:
+            if not body:
+                return {"error": "Missing request body"}
+            trade_id = body.get("trade_id", "")
+            if not trade_id:
+                return {"error": "trade_id is required"}
+
+            stop_price = body.get("stop_price")
+            target_price = body.get("target_price")
+
+            if stop_price is None and target_price is None:
+                return {"error": "Must provide stop_price or target_price"}
+
+            # Update in tracker
+            trades = engine.tracker.get_open_trades()
+            trade = next((t for t in trades if t["id"] == trade_id), None)
+            if not trade:
+                return {"error": f"Trade {trade_id} not found or already closed"}
+
+            engine.tracker.update_trade_prices(trade_id, stop_price=stop_price, target_price=target_price)
+            return {"success": True, "trade_id": trade_id}
+        except Exception as e:
+            log.warning("Modify trade failed", error=str(e))
+            return {"error": str(e)}
 
     # ── Close position ────────────────────────────────────────────────────
 
