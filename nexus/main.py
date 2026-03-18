@@ -133,10 +133,49 @@ def backtest(tickers, years, capital, output, log_level):
     "--telegram", "use_telegram", is_flag=True, default=False, help="Enable Telegram trade alerts"
 )
 @click.option(
+    "--web",
+    "use_web",
+    is_flag=True,
+    default=False,
+    help="Enable web dashboard at http://localhost:8080",
+)
+@click.option(
+    "--web-port",
+    default=8080,
+    show_default=True,
+    help="Port for the web dashboard",
+)
+@click.option(
     "--flatten-on-exit",
     is_flag=True,
     default=False,
     help="Close all positions before shutting down",
+)
+@click.option(
+    "--options",
+    "use_options",
+    is_flag=True,
+    default=False,
+    help="Enable options trading (buy calls/puts instead of shares)",
+)
+@click.option(
+    "--target-dte",
+    default=0,
+    show_default=True,
+    help="Target days to expiration for options (0 = same-day/0DTE)",
+)
+@click.option(
+    "--max-premium",
+    default=0.0,
+    show_default=True,
+    help="Max premium per contract (0 = no limit)",
+)
+@click.option(
+    "--scan-universe",
+    "use_scanner",
+    is_flag=True,
+    default=False,
+    help="Scan 100+ tickers beyond watchlist for momentum/volume opportunities",
 )
 def run(
     paper,
@@ -148,7 +187,13 @@ def run(
     use_discord,
     use_twitter,
     use_telegram,
+    use_web,
+    web_port,
     flatten_on_exit,
+    use_options,
+    target_dte,
+    max_premium,
+    use_scanner,
 ):
     """Start the live long/short trading engine with Rich dashboard."""
     from nexus.logger import setup_logging
@@ -167,6 +212,16 @@ def run(
     )
     if tickers:
         cfg.watchlist = list(tickers)
+    if use_options:
+        cfg.options.enabled = True
+        cfg.options.target_dte = target_dte
+        cfg.options.min_dte = 0 if target_dte == 0 else max(target_dte - 7, 0)
+        cfg.options.max_dte = 730  # support LEAPS
+        cfg.options.auto_dte = True  # intelligent DTE selection
+        if max_premium > 0:
+            cfg.options.max_premium = max_premium
+    if use_scanner:
+        cfg.scanner.enabled = True
 
     try:
         cfg.validate()
@@ -202,8 +257,18 @@ def run(
 
     broker = _make_broker()
     mode = "PAPER" if paper else "LIVE"
-    click.echo(f"Starting NEXUS v3 [{mode}] — broker: {broker_name.upper()} — Long/Short")
+    trade_mode = "Options (Calls/Puts)" if use_options else "Long/Short"
+    click.echo(f"Starting NEXUS v3 [{mode}] — broker: {broker_name.upper()} — {trade_mode}")
     click.echo(f"Watchlist: {', '.join(cfg.watchlist)}")
+    if use_options:
+        dte_label = "Auto (0DTE→LEAPS)" if cfg.options.auto_dte else (
+            "0DTE (same-day)" if cfg.options.target_dte == 0 else f"{cfg.options.target_dte}d"
+        )
+        prem_label = f", max premium=${cfg.options.max_premium:.2f}" if cfg.options.max_premium > 0 else ""
+        grid_label = ", IronGrid exits" if cfg.options.use_irongrid_exits else ""
+        click.echo(f"Options: DTE={dte_label}{prem_label}{grid_label}")
+    if use_scanner:
+        click.echo("Universe scanner: ON (scanning 100+ tickers for momentum/volume)")
     click.echo(f"Scan interval: {scan_interval}s  |  Press Ctrl+C to stop\n")
 
     async def _run():
@@ -212,7 +277,20 @@ def run(
 
         engine = NEXUSEngine(config=cfg, broker=broker, flatten_on_exit=flatten_on_exit)
 
-        tasks = [engine.start()]
+        tasks = []
+
+        # Web server goes first so it can bind the port before any
+        # potentially-blocking broker connection attempts.
+        if use_web:
+            from nexus.web import WebServer
+
+            web = WebServer(engine, port=web_port)
+            tasks.append(web.start())
+            click.echo(f"Web dashboard → http://localhost:{web_port}")
+        else:
+            web = None
+
+        tasks.append(engine.start())
         if not no_dashboard:
             dash = NEXUSDashboard(engine.tracker, paper=paper, event_bus=engine.event_bus)
             tasks.append(dash.run())
@@ -264,6 +342,8 @@ def run(
                 await twitter_feed.stop()
             if alerter:
                 await alerter.stop()
+            if web:
+                await web.stop()
 
     try:
         asyncio.run(_run())

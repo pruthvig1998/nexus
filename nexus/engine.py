@@ -23,6 +23,7 @@ import pandas as pd
 from nexus.broker import (
     AlpacaBroker,
     BaseBroker,
+    OptionsContract,
     OrderSide,
     OrderStatus,
     OrderType,
@@ -151,6 +152,13 @@ class NEXUSEngine:
         # Daily reset tracking
         self._last_reset_date: Optional[date] = None
 
+        # VIX cache for DTE engine
+        self._vix: float = 20.0
+
+        # Scanner for broader universe
+        self._scanner_tickers: List[str] = []
+        self._last_scan_time: float = 0
+
         # Drawdown tracking for position size scaling — restore from DB
         saved_peak = self._tracker.get_meta("peak_equity")
         self._peak_equity: float = float(saved_peak) if saved_peak else 0.0
@@ -179,6 +187,10 @@ class NEXUSEngine:
     @property
     def price_cache(self) -> Dict[str, pd.DataFrame]:
         return self._price_cache
+
+    @property
+    def scanner_tickers(self) -> List[str]:
+        return self._scanner_tickers
 
     async def start(self) -> None:
         log.info(
@@ -363,9 +375,49 @@ class NEXUSEngine:
             except Exception as e:
                 log.debug("Account refresh failed", error=str(e))
 
+        # Update VIX for DTE engine
+        try:
+            from nexus.strategy_irongrid import get_vix
+
+            self._vix = await get_vix()
+        except Exception:
+            pass
+
+        # Run universe scanner if enabled
+        if self._cfg.scanner.enabled:
+            import time as _time
+
+            now = _time.time()
+            if now - self._last_scan_time >= self._cfg.scanner.scan_interval:
+                try:
+                    from nexus.scanner import UniverseScanner
+
+                    scanner = UniverseScanner(max_tickers=self._cfg.scanner.max_tickers)
+                    self._scanner_tickers = await scanner.scan()
+                    self._last_scan_time = now
+                    if self._scanner_tickers:
+                        log.info(
+                            "Scanner discovered tickers",
+                            count=len(self._scanner_tickers),
+                            sample=self._scanner_tickers[:5],
+                        )
+                except Exception as e:
+                    log.debug("Scanner failed", error=str(e))
+
+        # Combine watchlist + scanner tickers
+        all_tickers = list(self._cfg.watchlist)
+        for t in self._scanner_tickers:
+            if t not in all_tickers:
+                all_tickers.append(t)
+
+        # Fetch prices for scanner tickers too
+        for ticker in self._scanner_tickers:
+            if ticker not in self._price_cache:
+                await self._fetch_price(ticker, datetime.now(timezone.utc))
+
         tasks = [
             strategy.analyze(ticker, self._price_cache.get(ticker))
-            for ticker in self._cfg.watchlist
+            for ticker in all_tickers
             for strategy in self._strategies
             if self._price_cache.get(ticker) is not None
         ]
@@ -392,6 +444,21 @@ class NEXUSEngine:
             if market_open:
                 for sig in best.values():
                     if sig.score >= self._cfg.strategy.min_signal_score:
+                        # Convert to options signal if options enabled
+                        if self._cfg.options.enabled and sig.instrument_type == "EQUITY":
+                            from nexus.strategy_options import convert_signal_to_option
+
+                            try:
+                                acct = await self._broker.get_account_info()
+                                opt_sig = await convert_signal_to_option(
+                                    sig, self._broker, acct.portfolio_value,
+                                    vix=self._vix,
+                                )
+                                if opt_sig:
+                                    await self._execute_options(opt_sig)
+                                    continue
+                            except Exception as e:
+                                log.debug("Options conversion failed", ticker=sig.ticker, error=str(e))
                         await self._execute(sig)
 
         if self._broker.is_connected:
@@ -412,8 +479,9 @@ class NEXUSEngine:
             for t in self._cfg.watchlist
             if t not in self._cache_ts or (now - self._cache_ts[t]).total_seconds() > 300
         ]
-        # Evict tickers no longer on watchlist to prevent unbounded cache growth
-        stale_keys = [t for t in self._price_cache if t not in self._cfg.watchlist]
+        # Evict tickers no longer on watchlist or scanner results
+        active_tickers = set(self._cfg.watchlist) | set(self._scanner_tickers)
+        stale_keys = [t for t in self._price_cache if t not in active_tickers]
         for t in stale_keys:
             del self._price_cache[t]
             self._cache_ts.pop(t, None)
@@ -600,6 +668,84 @@ class NEXUSEngine:
         except Exception as e:
             log.error("Execute failed", ticker=signal.ticker, error=str(e))
 
+    # ── Options execution ──────────────────────────────────────────────────────
+
+    async def _execute_options(self, signal: Signal) -> None:
+        """Execute an options signal — buy calls or puts."""
+        try:
+            contract = OptionsContract(
+                ticker=signal.ticker,
+                strike=signal.option_strike,
+                expiration=signal.option_expiration,
+                right=signal.instrument_type,
+                code=signal.option_code,
+            )
+            qty = signal.contracts
+            if qty < 1:
+                return
+
+            self._tracker.log_signal(
+                ticker=signal.ticker,
+                strategy=signal.strategy,
+                score=signal.score,
+                direction=f"BUY_{signal.instrument_type}",
+                reasoning=signal.reasoning,
+            )
+
+            result = await self._broker.place_options_order(
+                contract=contract,
+                side=OrderSide.BUY,
+                qty=qty,
+                order_type=OrderType.LIMIT,
+                limit_price=signal.limit_price or signal.entry_price,
+            )
+
+            if result.status == OrderStatus.REJECTED:
+                log.warning(
+                    "Options order rejected",
+                    ticker=signal.ticker,
+                    right=signal.instrument_type,
+                    msg=result.message,
+                )
+                return
+
+            trade_id = self._tracker.open_trade(
+                broker=self._broker.name,
+                ticker=signal.ticker,
+                side="LONG",
+                shares=float(qty),
+                entry_price=result.avg_fill_price or signal.entry_price,
+                stop_price=signal.stop_price,
+                target_price=signal.target_price,
+                strategy=signal.strategy,
+                signal_score=signal.score,
+                paper=self._cfg.paper,
+                instrument_type=signal.instrument_type,
+                option_strike=signal.option_strike,
+                option_expiration=signal.option_expiration,
+                option_code=signal.option_code,
+            )
+            self._pending[result.order_id] = _PendingOrder(
+                order_id=result.order_id,
+                trade_id=trade_id,
+                ticker=signal.ticker,
+                shares=float(qty),
+                side=signal.instrument_type,  # "CALL" or "PUT"
+            )
+            await self._bus.publish(EventType.ORDER_SUBMITTED, result)
+            log.info(
+                "Options order submitted",
+                ticker=signal.ticker,
+                type=signal.instrument_type,
+                strike=signal.option_strike,
+                exp=signal.option_expiration,
+                contracts=qty,
+                premium=f"${signal.entry_price:.2f}",
+                strategy=signal.strategy,
+            )
+        except Exception as e:
+            log.error("Options execute failed", ticker=signal.ticker, error=str(e))
+
     # ── Fill polling ──────────────────────────────────────────────────────────
 
     async def _poll_fills(self) -> None:
@@ -653,10 +799,20 @@ class NEXUSEngine:
         open_trades = self._tracker.get_open_trades(broker=self._broker.name)
         if not open_trades:
             return
-        tickers = list({t["ticker"] for t in open_trades})
+
+        # Separate options and equity trades
+        equity_trades = [t for t in open_trades if t.get("instrument_type", "EQUITY") == "EQUITY"]
+        option_trades = [t for t in open_trades if t.get("instrument_type", "EQUITY") in ("CALL", "PUT")]
+
+        if option_trades:
+            await self._check_options_exits(option_trades)
+
+        tickers = list({t["ticker"] for t in equity_trades})
+        if not tickers:
+            return
         quotes = await self._broker.get_batch_quotes(tickers)
 
-        for trade in open_trades:
+        for trade in equity_trades:
             quote = quotes.get(trade["ticker"])
             if not quote:
                 continue
@@ -718,3 +874,215 @@ class NEXUSEngine:
                     pnl=f"${pnl:+.2f}" if pnl else "?",
                     reason=reason,
                 )
+
+    async def _check_options_exits(self, trades: List[dict]) -> None:
+        """Check options trades for exit conditions.
+
+        Uses IronGrid profit ladder when enabled:
+        - Level 1: Trim 25% at +25% gain
+        - Level 2: Trim 50% at +50% gain
+        - Level 3: Recover capital at +100% gain
+        - Trailing stop: 12% trail once up 20%+
+        - Stop loss: 25% (IronGrid) or configurable
+        - DTE exit: close if < min_dte_exit days remaining
+
+        Falls back to simple profit_target/stop_loss when IronGrid disabled.
+        """
+        from datetime import datetime as _dt
+
+        opts_cfg = self._cfg.options
+        strat_cfg = self._cfg.strategy
+        use_grid = opts_cfg.use_irongrid_exits
+        today = _dt.now().date()
+
+        for trade in trades:
+            opt_code = trade.get("option_code", "")
+            if not opt_code:
+                continue
+
+            try:
+                contract = OptionsContract(
+                    ticker=trade["ticker"],
+                    strike=trade.get("option_strike", 0),
+                    expiration=trade.get("option_expiration", ""),
+                    right=trade.get("instrument_type", "CALL"),
+                    code=opt_code,
+                )
+                quote = await self._broker.get_quote(opt_code)
+                if not quote:
+                    continue
+
+                current_price = quote.last
+                entry_price = trade["entry_price"]
+                if entry_price <= 0:
+                    continue
+
+                pnl_pct = (current_price - entry_price) / entry_price
+                shares = int(trade["shares"])
+                grid_level = trade.get("grid_level", 0) or 0
+                trailing_stop = trade.get("trailing_stop", 0) or 0
+                original_shares = trade.get("original_shares", 0) or shares
+
+                # ── DTE exit (always active) ──────────────────────────────
+                reason = None
+                exp_str = trade.get("option_expiration", "")
+                if exp_str:
+                    try:
+                        exp_date = _dt.strptime(exp_str[:10], "%Y-%m-%d").date()
+                        dte = (exp_date - today).days
+                        if dte <= opts_cfg.min_dte_exit:
+                            reason = f"dte_exit ({dte}d remaining)"
+                    except ValueError:
+                        pass
+
+                # ── Stop loss (IronGrid: 25%, fallback: configurable) ─────
+                stop_pct = strat_cfg.stop_loss_pct if use_grid else opts_cfg.stop_loss_pct
+                if pnl_pct <= -stop_pct:
+                    reason = f"stop_loss ({pnl_pct:.0%})"
+
+                # ── Trailing stop check ───────────────────────────────────
+                if trailing_stop > 0 and current_price <= trailing_stop:
+                    reason = f"trailing_stop (trail=${trailing_stop:.2f})"
+
+                # ── Full exit triggers → sell everything ──────────────────
+                if reason:
+                    await self._broker.place_options_order(
+                        contract=contract,
+                        side=OrderSide.SELL,
+                        qty=shares,
+                        order_type=OrderType.LIMIT,
+                        limit_price=round(current_price * 0.98, 2),
+                    )
+                    pnl = self._tracker.close_trade(trade["id"], current_price, reason)
+                    await self._bus.publish(
+                        EventType.POSITION_CLOSED,
+                        {
+                            "trade_id": trade["id"],
+                            "ticker": trade["ticker"],
+                            "side": trade.get("instrument_type", "CALL"),
+                            "pnl": pnl,
+                            "reason": reason,
+                        },
+                    )
+                    log.info(
+                        "Options position closed",
+                        ticker=trade["ticker"],
+                        type=trade.get("instrument_type"),
+                        pnl=f"${pnl:+.2f}" if pnl else "?",
+                        reason=reason,
+                    )
+                    continue
+
+                if not use_grid:
+                    # Simple mode: single profit target
+                    if pnl_pct >= opts_cfg.profit_target_pct:
+                        await self._broker.place_options_order(
+                            contract=contract,
+                            side=OrderSide.SELL,
+                            qty=shares,
+                            order_type=OrderType.LIMIT,
+                            limit_price=round(current_price * 0.98, 2),
+                        )
+                        pnl = self._tracker.close_trade(
+                            trade["id"], current_price, f"profit_target ({pnl_pct:.0%})"
+                        )
+                        await self._bus.publish(
+                            EventType.POSITION_CLOSED,
+                            {
+                                "trade_id": trade["id"],
+                                "ticker": trade["ticker"],
+                                "side": trade.get("instrument_type", "CALL"),
+                                "pnl": pnl,
+                                "reason": f"profit_target ({pnl_pct:.0%})",
+                            },
+                        )
+                    continue
+
+                # ── IronGrid Profit Ladder ────────────────────────────────
+                # Level 1: Trim 25% at +25%
+                if grid_level < 1 and pnl_pct >= strat_cfg.profit_trim_25:
+                    trim_qty = max(1, int(original_shares * 0.25))
+                    if trim_qty > 0 and shares > trim_qty:
+                        await self._broker.place_options_order(
+                            contract=contract,
+                            side=OrderSide.SELL,
+                            qty=trim_qty,
+                            order_type=OrderType.LIMIT,
+                            limit_price=round(current_price * 0.98, 2),
+                        )
+                        partial_pnl = self._tracker.partial_close_trade(
+                            trade["id"], trim_qty, current_price, "grid_L1_trim_25pct"
+                        )
+                        # Move stop to breakeven after first trim
+                        self._tracker.update_grid_level(trade["id"], 1, trailing_stop=entry_price)
+                        log.info(
+                            "IronGrid L1: trim 25%",
+                            ticker=trade["ticker"],
+                            trimmed=trim_qty,
+                            remaining=shares - trim_qty,
+                            pnl=f"${partial_pnl:+.2f}" if partial_pnl else "?",
+                        )
+
+                # Level 2: Trim 50% (of original) at +50%
+                elif grid_level < 2 and pnl_pct >= strat_cfg.profit_trim_50:
+                    trim_qty = max(1, int(original_shares * 0.25))  # another 25% of original
+                    trim_qty = min(trim_qty, shares - 1) if shares > 1 else 0
+                    if trim_qty > 0:
+                        await self._broker.place_options_order(
+                            contract=contract,
+                            side=OrderSide.SELL,
+                            qty=trim_qty,
+                            order_type=OrderType.LIMIT,
+                            limit_price=round(current_price * 0.98, 2),
+                        )
+                        partial_pnl = self._tracker.partial_close_trade(
+                            trade["id"], trim_qty, current_price, "grid_L2_trim_50pct"
+                        )
+                        # Tighten trailing stop
+                        new_trail = current_price * (1 - strat_cfg.trailing_stop_pct)
+                        self._tracker.update_grid_level(trade["id"], 2, trailing_stop=new_trail)
+                        log.info(
+                            "IronGrid L2: trim 50%",
+                            ticker=trade["ticker"],
+                            trimmed=trim_qty,
+                            remaining=shares - trim_qty,
+                            trail=f"${new_trail:.2f}",
+                        )
+
+                # Level 3: Recover capital at +100%
+                elif grid_level < 3 and pnl_pct >= strat_cfg.profit_recover_100:
+                    # Sell enough to recover original capital
+                    cost_basis = entry_price * original_shares * 100  # total premium paid
+                    contracts_to_sell = max(1, int(cost_basis / (current_price * 100)))
+                    contracts_to_sell = min(contracts_to_sell, shares - 1) if shares > 1 else 0
+                    if contracts_to_sell > 0:
+                        await self._broker.place_options_order(
+                            contract=contract,
+                            side=OrderSide.SELL,
+                            qty=contracts_to_sell,
+                            order_type=OrderType.LIMIT,
+                            limit_price=round(current_price * 0.98, 2),
+                        )
+                        partial_pnl = self._tracker.partial_close_trade(
+                            trade["id"], contracts_to_sell, current_price,
+                            "grid_L3_capital_recovery",
+                        )
+                        new_trail = current_price * (1 - strat_cfg.trailing_stop_pct)
+                        self._tracker.update_grid_level(trade["id"], 3, trailing_stop=new_trail)
+                        log.info(
+                            "IronGrid L3: capital recovered",
+                            ticker=trade["ticker"],
+                            sold=contracts_to_sell,
+                            remaining=shares - contracts_to_sell,
+                        )
+
+                # ── Update trailing stop if price moved up ────────────────
+                if grid_level >= 1 and pnl_pct >= 0.20:
+                    new_trail = current_price * (1 - strat_cfg.trailing_stop_pct)
+                    if new_trail > trailing_stop:
+                        self._tracker.update_grid_level(
+                            trade["id"], grid_level, trailing_stop=new_trail,
+                        )
+
+            except Exception as e:
+                log.error("Options exit check failed", ticker=trade["ticker"], error=str(e))

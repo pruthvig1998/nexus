@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEXUS Trading Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = { theme: { extend: { colors: { nexus: {
+            bg:'#0F172A', card:'#1E293B', border:'#4A6FA5', gold:'#C5A55A',
+            green:'#22C55E', red:'#EF4444', dim:'#64748B', bright:'#E2E8F0',
+            mid:'#94A3B8', hover:'#334155', amber:'#F59E0B',
+        }}}}}};
+    </script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="bg-nexus-bg text-nexus-bright min-h-screen" x-data="nexus">
+
+    <!-- Loading Screen -->
+    <div x-show="loading" class="fixed inset-0 bg-nexus-bg z-50 flex items-center justify-center">
+        <div class="text-center">
+            <div class="text-3xl font-bold tracking-wider mb-4" style="color:var(--nexus-gold)">NEXUS</div>
+            <div class="spinner mx-auto mb-3"></div>
+            <div class="text-nexus-dim text-sm">Connecting to engine...</div>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <header class="border-b border-nexus-border/30 px-6 py-3" x-show="!loading" x-cloak>
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <h1 class="text-xl font-bold tracking-wider" style="color:var(--nexus-gold)">NEXUS</h1>
+                <span class="badge" :class="status.paper ? 'badge-paper' : 'badge-live'" x-text="status.paper ? 'PAPER' : 'LIVE'"></span>
+                <span x-show="status.options_enabled" class="px-2 py-0.5 text-[10px] rounded bg-purple-500/20 text-purple-400 border border-purple-500/30">OPTIONS</span>
+                <span class="text-xs text-nexus-dim font-mono" x-text="(status.broker||'').toUpperCase()"></span>
+            </div>
+            <div class="flex items-center gap-8 font-mono text-sm">
+                <template x-if="brokerConnected">
+                    <div class="flex items-center gap-8">
+                        <div><span class="text-nexus-dim text-xs">PORTFOLIO</span><span class="ml-2 font-semibold" x-text="fmtMoneyOrZero(account.portfolio_value)"></span></div>
+                        <div><span class="text-nexus-dim text-xs">DAY P&L</span><span class="ml-2 font-semibold" :style="pnlColor(account.day_pnl)" x-text="fmtPnl(account.day_pnl)"></span></div>
+                        <div><span class="text-nexus-dim text-xs">CASH</span><span class="ml-2" x-text="fmtMoneyOrZero(account.cash)"></span></div>
+                        <div><span class="text-nexus-dim text-xs">BUYING PWR</span><span class="ml-2" x-text="fmtMoneyOrZero(account.buying_power)"></span></div>
+                    </div>
+                </template>
+                <template x-if="!brokerConnected">
+                    <div class="flex items-center gap-2 text-nexus-amber text-xs">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                        <span>Broker not connected</span>
+                    </div>
+                </template>
+            </div>
+            <div class="flex items-center gap-4 text-xs text-nexus-dim">
+                <span class="font-mono" x-text="clock"></span>
+                <div class="flex items-center gap-1.5">
+                    <span class="status-dot" :class="wsConnected ? 'connected' : 'disconnected'"></span>
+                    <span x-text="wsConnected ? 'WS LIVE' : 'WS OFF'"></span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Tabs -->
+    <nav class="border-b border-nexus-border/20 px-6" x-show="!loading" x-cloak role="tablist">
+        <div class="max-w-7xl mx-auto flex gap-0">
+            <button class="tab-btn" :class="view==='dashboard'&&'active'" @click="switchView('dashboard')">Dashboard</button>
+            <button class="tab-btn" :class="view==='performance'&&'active'" @click="switchView('performance')">Performance</button>
+            <button class="tab-btn" :class="view==='trades'&&'active'" @click="switchView('trades')">Trade History</button>
+            <button class="tab-btn" :class="view==='broker-orders'&&'active'" @click="switchView('broker-orders')">Broker Orders</button>
+            <button class="tab-btn" :class="view==='scanner'&&'active'" @click="switchView('scanner')">Scanner</button>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-6 py-4" x-show="!loading" x-cloak>
+
+        <!-- Broker Disconnected Banner -->
+        <div x-show="!brokerConnected" class="alert-banner warning mb-4 fade-in">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="flex-shrink-0 mt-0.5"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <div>
+                <div class="font-semibold mb-1">Broker Disconnected</div>
+                <div class="text-xs leading-relaxed" style="color:var(--nexus-mid)">
+                    Cannot reach <span class="font-mono" x-text="(status.broker||'alpaca').toUpperCase()"></span>.
+                    Verify API keys in <span class="font-mono">.env</span> (<span class="font-mono">ALPACA_API_KEY</span>, <span class="font-mono">ALPACA_SECRET_KEY</span>).
+                    Engine is still running — signals and scan activity appear below. Live positions populate once connected.
+                </div>
+            </div>
+        </div>
+
+        <!-- Dashboard View -->
+        <div x-show="view==='dashboard'" x-cloak>
+            <div class="grid grid-cols-12 gap-4 mb-4 grid-3col">
+
+                <!-- Positions -->
+                <div class="col-span-5 card">
+                    <div class="card-header flex items-center justify-between"><span>Open Positions</span><span class="text-nexus-mid text-xs font-mono" x-text="positions.length+' active'"></span></div>
+                    <div x-show="positions.length>0" class="overflow-auto" style="max-height:320px">
+                        <table class="data-table font-mono"><thead><tr><th>Ticker</th><th>Contract</th><th>Side</th><th class="text-right">Qty</th><th class="text-right">Entry</th><th class="text-right">Last</th><th class="text-right">Mkt Val</th><th class="text-right">P&L</th><th class="text-right">P&L %</th><th></th></tr></thead>
+                        <tbody><template x-for="p in positions" :key="p.ticker+(p.option_code||'')"><tr>
+                            <td class="font-semibold">
+                                <span x-text="p.ticker"></span>
+                                <span x-show="p.instrument_type === 'CALL'" class="ml-1 px-1.5 py-0.5 text-[10px] rounded bg-green-500/20 text-green-400">CALL</span>
+                                <span x-show="p.instrument_type === 'PUT'" class="ml-1 px-1.5 py-0.5 text-[10px] rounded bg-red-500/20 text-red-400">PUT</span>
+                            </td>
+                            <td class="px-3 py-2 text-xs text-slate-400">
+                                <template x-if="p.instrument_type && p.instrument_type !== 'EQUITY'">
+                                    <span>
+                                        <span x-text="p.strike + (p.instrument_type === 'CALL' ? 'C' : 'P')"></span>
+                                        <span x-text="p.expiration ? p.expiration.substring(5) : ''"></span>
+                                    </span>
+                                </template>
+                            </td>
+                            <td><span class="badge" :class="(p.side||'LONG')==='LONG'?'badge-long':'badge-short'" x-text="p.side||'LONG'"></span></td>
+                            <td class="text-right" x-text="p.shares"></td>
+                            <td class="text-right" x-text="'$'+Number(p.avg_cost).toFixed(2)"></td>
+                            <td class="text-right" x-text="'$'+Number(p.current_price).toFixed(2)"></td>
+                            <td class="text-right" x-text="fmtMoneyOrZero(p.market_value)"></td>
+                            <td class="text-right" :style="pnlColor(p.unrealized_pnl)" x-text="fmtPnl(p.unrealized_pnl)"></td>
+                            <td class="text-right" :style="pnlColor(p.unrealized_pnl_pct)" x-text="fmtPct(p.unrealized_pnl_pct)"></td>
+                            <td class="text-right"><button @click="closePosition(p.ticker, p.option_code)" class="px-2 py-1 text-[10px] rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30 transition-colors">Close</button></td>
+                        </tr></template></tbody></table>
+                    </div>
+                    <div x-show="positions.length===0" class="empty-state">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                        <div class="title" x-text="brokerConnected?'No open positions':'Waiting for broker'"></div>
+                        <div class="desc" x-text="brokerConnected?'Positions appear when the engine opens trades.':'Connect your broker to see live positions.'"></div>
+                    </div>
+                </div>
+
+                <!-- Signals -->
+                <div class="col-span-4 card">
+                    <div class="card-header flex items-center justify-between"><span>Recent Signals</span><span class="text-nexus-mid text-xs font-mono" x-text="signals.length+' signals'"></span></div>
+                    <div x-show="signals.length>0" class="overflow-auto" style="max-height:320px">
+                        <table class="data-table font-mono"><thead><tr><th>Time</th><th>Ticker</th><th>Dir</th><th>Score</th><th>Strategy</th></tr></thead>
+                        <tbody><template x-for="s in signals" :key="s.id"><tr>
+                            <td class="text-nexus-dim" x-text="fmtTime(s.ts)"></td>
+                            <td class="font-semibold" x-text="s.ticker"></td>
+                            <td><span class="badge" :class="s.direction==='BUY'?'badge-long':'badge-short'" x-text="s.direction"></span></td>
+                            <td><div class="flex items-center gap-2"><div class="score-bar"><div class="score-bar-fill" :style="`width:${(s.score||0)*100}%;background:${scoreColor(s.score)}`"></div></div><span class="text-xs" x-text="Number(s.score).toFixed(2)"></span></div></td>
+                            <td class="text-nexus-dim text-xs" x-text="s.strategy"></td>
+                        </tr></template></tbody></table>
+                    </div>
+                    <div x-show="signals.length===0" class="empty-state">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                        <div class="title">No signals yet</div>
+                        <div class="desc">7 strategies scan <span class="font-mono text-nexus-mid" x-text="(status.watchlist||[]).length"></span> tickers every 60s. Signals stream as opportunities arise.</div>
+                    </div>
+                </div>
+
+                <!-- Risk + Activity -->
+                <div class="col-span-3 space-y-4">
+                    <div class="card">
+                        <div class="card-header">Risk & Performance</div>
+                        <div class="p-4 space-y-3 font-mono text-sm">
+                            <div><div class="text-nexus-dim text-xs mb-1">DAY P&L</div><div class="text-lg font-semibold" :style="pnlColor(account.day_pnl)" x-text="brokerConnected?fmtPnl(account.day_pnl):'--'"></div></div>
+                            <div x-show="positions.length>0">
+                                <div class="flex justify-between text-xs mb-1"><span class="text-nexus-dim">LONG</span><span class="text-nexus-green" x-text="fmtMoneyOrZero(longExposure)"></span></div>
+                                <div class="exposure-bar"><div class="exposure-bar-fill bg-nexus-green/60" :style="`width:${exposurePct(longExposure)}%`"></div></div>
+                            </div>
+                            <div x-show="positions.length>0">
+                                <div class="flex justify-between text-xs mb-1"><span class="text-nexus-dim">SHORT</span><span class="text-nexus-red" x-text="fmtMoneyOrZero(shortExposure)"></span></div>
+                                <div class="exposure-bar"><div class="exposure-bar-fill bg-nexus-red/60" :style="`width:${exposurePct(shortExposure)}%`"></div></div>
+                            </div>
+                            <div class="border-t border-nexus-border/20 pt-2 space-y-1.5">
+                                <div class="flex justify-between text-xs"><span class="text-nexus-dim">WIN RATE</span><span x-text="fmtRate(stats.win_rate)"></span></div>
+                                <div class="flex justify-between text-xs"><span class="text-nexus-dim">PROFIT FACTOR</span><span x-text="(stats.profit_factor||0).toFixed(2)+'x'"></span></div>
+                                <div class="flex justify-between text-xs"><span class="text-nexus-dim">AVG WIN</span><span class="text-nexus-green" x-text="fmtPnl(stats.avg_win)"></span></div>
+                                <div class="flex justify-between text-xs"><span class="text-nexus-dim">AVG LOSS</span><span class="text-nexus-red" x-text="'-$'+(stats.avg_loss||0).toFixed(2)"></span></div>
+                                <div class="flex justify-between text-xs"><span class="text-nexus-dim">TOTAL P&L</span><span :style="pnlColor(stats.total_pnl)" x-text="fmtPnl(stats.total_pnl)"></span></div>
+                                <div class="flex justify-between text-xs"><span class="text-nexus-dim">TOTAL TRADES</span><span x-text="stats.total_trades||0"></span></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header flex items-center justify-between"><span>Activity Feed</span><span class="text-nexus-mid text-xs font-mono" x-text="activityFeed.length?activityFeed.length+' events':'listening...'"></span></div>
+                        <div class="overflow-auto" style="max-height:180px">
+                            <template x-for="(a,i) in activityFeed" :key="i">
+                                <div class="activity-item font-mono">
+                                    <div class="activity-dot" :style="`background:${activityDotColor(a.color)}`"></div>
+                                    <div class="flex-1 min-w-0"><span class="text-xs font-semibold" :style="`color:${activityDotColor(a.color)}`" x-text="a.label"></span><span class="text-xs text-nexus-dim ml-1" x-text="a.detail"></span></div>
+                                    <span class="text-xs text-nexus-dim flex-shrink-0" x-text="a.time"></span>
+                                </div>
+                            </template>
+                            <div x-show="activityFeed.length===0" class="p-4 text-center text-xs text-nexus-dim">Waiting for engine events...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Closed Trades -->
+            <div class="card">
+                <div class="card-header flex items-center justify-between"><span>Recent Closed Trades</span><span class="text-nexus-mid text-xs font-mono" x-text="closedTrades.length+' total closed'"></span></div>
+                <div x-show="closedTrades.length>0" class="overflow-auto">
+                    <table class="data-table font-mono"><thead><tr><th>Time</th><th>Ticker</th><th>Contract</th><th>Side</th><th class="text-right">Qty</th><th class="text-right">Entry</th><th class="text-right">Exit</th><th class="text-right">P&L</th><th>Reason</th><th>Strategy</th></tr></thead>
+                    <tbody><template x-for="t in recentClosed" :key="t.id"><tr>
+                        <td class="text-nexus-dim" x-text="fmtDate(t.closed_at)"></td>
+                        <td class="font-semibold">
+                            <span x-text="t.ticker"></span>
+                            <span x-show="t.instrument_type === 'CALL'" class="ml-1 px-1.5 py-0.5 text-[10px] rounded bg-green-500/20 text-green-400">CALL</span>
+                            <span x-show="t.instrument_type === 'PUT'" class="ml-1 px-1.5 py-0.5 text-[10px] rounded bg-red-500/20 text-red-400">PUT</span>
+                        </td>
+                        <td class="px-3 py-2 text-xs text-slate-400" x-text="fmtContract(t)"></td>
+                        <td><span class="badge" :class="(t.side||'LONG')==='LONG'?'badge-long':'badge-short'" x-text="t.side||'LONG'"></span></td>
+                        <td class="text-right" x-text="t.shares"></td>
+                        <td class="text-right" x-text="'$'+Number(t.entry_price).toFixed(2)"></td>
+                        <td class="text-right" x-text="'$'+Number(t.exit_price||0).toFixed(2)"></td>
+                        <td class="text-right" :style="pnlColor(t.pnl)" x-text="fmtPnl(t.pnl)"></td>
+                        <td class="text-nexus-dim text-xs" x-text="t.exit_reason||'-'"></td>
+                        <td class="text-nexus-dim text-xs" x-text="t.strategy"></td>
+                    </tr></template></tbody></table>
+                </div>
+                <div x-show="closedTrades.length===0" class="empty-state" style="padding:20px"><div class="title">No closed trades yet</div><div class="desc">Trades close on stop loss, profit target, or exit signal.</div></div>
+            </div>
+
+            <!-- Status Bar -->
+            <div class="mt-4 flex items-center justify-between text-xs text-nexus-dim font-mono px-2">
+                <div class="flex items-center gap-6">
+                    <div class="flex items-center gap-1.5"><span class="status-dot" :class="brokerConnected?'connected':'disconnected'"></span><span x-text="(status.broker||'alpaca').toUpperCase()"></span></div>
+                    <span>Scans: <span class="text-nexus-mid" x-text="status.scan_count||0"></span></span>
+                    <span>Positions: <span class="text-nexus-mid" x-text="positions.length"></span></span>
+                    <span>DB Trades: <span class="text-nexus-mid" x-text="openTrades.length+' open / '+closedTrades.length+' closed'"></span></span>
+                </div>
+                <div class="flex items-center gap-4">
+                    <span>Tickers: <span class="text-nexus-mid" x-text="(status.total_tickers||((status.watchlist||[]).length))+' ('+(status.watchlist||[]).length+' watchlist'+(status.scanner_tickers&&status.scanner_tickers.length?' + '+status.scanner_tickers.length+' scanner':'')+')'"></span></span>
+                    <span x-show="status.vix">VIX: <span class="text-nexus-mid" :style="(status.vix||20)>25?'color:var(--nexus-red)':''" x-text="(status.vix||20).toFixed(1)"></span></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Performance View -->
+        <div x-show="view==='performance'" x-cloak>
+            <div class="grid grid-cols-6 gap-4 mb-6 grid-3col">
+                <div class="stat-card"><div class="stat-label">Win Rate</div><div class="stat-value font-mono" x-text="fmtRate(stats.win_rate)"></div></div>
+                <div class="stat-card"><div class="stat-label">Profit Factor</div><div class="stat-value font-mono" x-text="(stats.profit_factor||0).toFixed(2)+'x'"></div></div>
+                <div class="stat-card"><div class="stat-label">Avg Win</div><div class="stat-value font-mono text-nexus-green" x-text="fmtPnl(stats.avg_win)"></div></div>
+                <div class="stat-card"><div class="stat-label">Avg Loss</div><div class="stat-value font-mono text-nexus-red" x-text="'-$'+(stats.avg_loss||0).toFixed(2)"></div></div>
+                <div class="stat-card"><div class="stat-label">Total Trades</div><div class="stat-value font-mono" x-text="stats.total_trades||0"></div></div>
+                <div class="stat-card"><div class="stat-label">Total P&L</div><div class="stat-value font-mono" :style="pnlColor(stats.total_pnl)" x-text="fmtPnl(stats.total_pnl)"></div></div>
+            </div>
+            <div class="grid grid-cols-2 gap-4 mb-6 grid-2col">
+                <div class="card"><div class="card-header">Cumulative P&L</div><div id="pnl-chart" class="chart-container" style="height:300px"><div x-show="pnlHistory.length===0" class="empty-state" style="height:300px"><div class="title">No P&L data</div><div class="desc">Chart populates as trades close.</div></div></div></div>
+                <div class="card"><div class="card-header">Daily P&L</div><div id="daily-chart" class="chart-container" style="height:300px"><div x-show="pnlHistory.length===0" class="empty-state" style="height:300px"><div class="title">No daily data</div><div class="desc">Bars appear for each trading day.</div></div></div></div>
+            </div>
+            <div class="card">
+                <div class="card-header">Strategy Breakdown</div>
+                <div x-show="strategyBreakdown.length>0">
+                    <table class="data-table font-mono"><thead><tr><th>Strategy</th><th class="text-right">Trades</th><th class="text-right">Win Rate</th><th class="text-right">Avg P&L</th><th class="text-right">Total P&L</th></tr></thead>
+                    <tbody><template x-for="s in strategyBreakdown" :key="s.strategy"><tr>
+                        <td class="font-semibold" x-text="s.strategy"></td><td class="text-right" x-text="s.count"></td>
+                        <td class="text-right" x-text="(s.count>0?(s.wins/s.count*100).toFixed(0):0)+'%'"></td>
+                        <td class="text-right" :style="pnlColor(s.totalPnl/Math.max(s.count,1))" x-text="fmtPnl(s.totalPnl/Math.max(s.count,1))"></td>
+                        <td class="text-right" :style="pnlColor(s.totalPnl)" x-text="fmtPnl(s.totalPnl)"></td>
+                    </tr></template></tbody></table>
+                </div>
+                <div x-show="strategyBreakdown.length===0" class="empty-state" style="padding:20px"><div class="title">No strategy data</div><div class="desc">Appears after trades close.</div></div>
+            </div>
+        </div>
+
+        <!-- Trade History View -->
+        <div x-show="view==='trades'" x-cloak>
+            <div class="flex items-center gap-4 mb-4">
+                <div class="flex rounded-lg overflow-hidden border border-nexus-border/30">
+                    <button class="px-4 py-2 text-sm font-mono transition-colors" :class="tradeFilter==='open'?'bg-nexus-border/30 text-nexus-bright':'text-nexus-dim hover:text-nexus-mid'" @click="tradeFilter='open';tradePage=1">Open (<span x-text="openTrades.length"></span>)</button>
+                    <button class="px-4 py-2 text-sm font-mono transition-colors" :class="tradeFilter==='closed'?'bg-nexus-border/30 text-nexus-bright':'text-nexus-dim hover:text-nexus-mid'" @click="tradeFilter='closed';tradePage=1">Closed (<span x-text="closedTrades.length"></span>)</button>
+                </div>
+                <input type="text" placeholder="Search ticker or strategy..." x-model="tradeSearch" class="bg-nexus-card border border-nexus-border/30 rounded-lg px-4 py-2 text-sm font-mono text-nexus-bright placeholder-nexus-dim focus:outline-none focus:border-nexus-gold/50 w-64">
+            </div>
+            <div class="card">
+                <div x-show="filteredTrades.length>0" class="overflow-auto">
+                    <table class="data-table font-mono"><thead><tr>
+                        <th>Opened</th><th>Ticker</th><th>Contract</th><th>Side</th><th class="text-right">Qty</th><th class="text-right">Entry</th><th class="text-right">Stop</th><th class="text-right">Target</th>
+                        <th class="text-right" x-show="tradeFilter==='closed'">Exit</th><th class="text-right" x-show="tradeFilter==='closed'">P&L</th><th x-show="tradeFilter==='closed'">Reason</th>
+                        <th>Strategy</th><th class="text-right">Score</th>
+                        <th x-show="tradeFilter==='open'"></th>
+                    </tr></thead>
+                    <tbody><template x-for="t in pagedTrades" :key="t.id"><tr>
+                        <td class="text-nexus-dim" x-text="fmtDate(t.opened_at)"></td>
+                        <td class="font-semibold">
+                            <span x-text="t.ticker"></span>
+                            <span x-show="t.instrument_type === 'CALL'" class="ml-1 px-1.5 py-0.5 text-[10px] rounded bg-green-500/20 text-green-400">CALL</span>
+                            <span x-show="t.instrument_type === 'PUT'" class="ml-1 px-1.5 py-0.5 text-[10px] rounded bg-red-500/20 text-red-400">PUT</span>
+                        </td>
+                        <td class="px-3 py-2 text-xs text-slate-400" x-text="fmtContract(t)"></td>
+                        <td><span class="badge" :class="(t.side||'LONG')==='LONG'?'badge-long':'badge-short'" x-text="t.side||'LONG'"></span></td>
+                        <td class="text-right" x-text="t.shares"></td>
+                        <td class="text-right" x-text="'$'+Number(t.entry_price).toFixed(2)"></td>
+                        <td class="text-right text-nexus-dim" x-text="'$'+Number(t.stop_price||0).toFixed(2)"></td>
+                        <td class="text-right text-nexus-dim" x-text="'$'+Number(t.target_price||0).toFixed(2)"></td>
+                        <td class="text-right" x-show="tradeFilter==='closed'" x-text="'$'+Number(t.exit_price||0).toFixed(2)"></td>
+                        <td class="text-right" x-show="tradeFilter==='closed'" :style="pnlColor(t.pnl)" x-text="fmtPnl(t.pnl)"></td>
+                        <td x-show="tradeFilter==='closed'" class="text-nexus-dim text-xs" x-text="t.exit_reason||'-'"></td>
+                        <td class="text-nexus-dim text-xs" x-text="t.strategy"></td>
+                        <td class="text-right" x-text="Number(t.signal_score||0).toFixed(2)"></td>
+                        <td x-show="tradeFilter==='open'" class="text-right">
+                            <div class="flex gap-1 justify-end">
+                                <button @click="closePosition(t.ticker, t.option_code)" class="px-2 py-1 text-[10px] rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30 transition-colors cursor-pointer">Close</button>
+                                <button @click="editingTrade = editingTrade === t.id ? null : t.id" class="px-2 py-1 text-[10px] rounded bg-nexus-border/20 text-nexus-mid hover:bg-nexus-border/30 border border-nexus-border/30 transition-colors cursor-pointer">Edit</button>
+                            </div>
+                            <div x-show="editingTrade === t.id" class="mt-2 p-2 bg-nexus-bg rounded border border-nexus-border/30 text-left" @click.stop>
+                                <div class="grid grid-cols-2 gap-2 mb-2">
+                                    <div><label class="text-[10px] text-nexus-dim block mb-1">Stop Price</label><input type="number" step="0.01" :value="t.stop_price" x-ref="stop" class="w-full bg-nexus-card border border-nexus-border/30 rounded px-2 py-1 text-xs font-mono text-nexus-bright"></div>
+                                    <div><label class="text-[10px] text-nexus-dim block mb-1">Target Price</label><input type="number" step="0.01" :value="t.target_price" x-ref="target" class="w-full bg-nexus-card border border-nexus-border/30 rounded px-2 py-1 text-xs font-mono text-nexus-bright"></div>
+                                </div>
+                                <button @click="modifyTrade(t.id, $refs.stop?.value, $refs.target?.value)" class="w-full px-2 py-1 text-[10px] rounded bg-nexus-gold/20 text-nexus-gold hover:bg-nexus-gold/30 border border-nexus-gold/30 transition-colors cursor-pointer">Save Changes</button>
+                            </div>
+                        </td>
+                    </tr></template></tbody></table>
+                </div>
+                <div x-show="filteredTrades.length===0" class="empty-state">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    <div class="title" x-text="tradeSearch?'No matching trades':'No '+tradeFilter+' trades'"></div>
+                    <div class="desc" x-text="tradeSearch?'Try a different search term.':tradeFilter==='open'?'Open trades appear when the engine enters positions.':'Closed trades appear after exits.'"></div>
+                </div>
+                <div class="flex items-center justify-between px-4 py-3 border-t border-nexus-border/20 text-xs text-nexus-dim font-mono" x-show="totalTradePages>1">
+                    <span>Page <span x-text="tradePage"></span> of <span x-text="totalTradePages"></span></span>
+                    <div class="flex gap-2">
+                        <button class="px-3 py-1 rounded border border-nexus-border/30 hover:bg-nexus-hover disabled:opacity-30" :disabled="tradePage<=1" @click="tradePage--">Prev</button>
+                        <button class="px-3 py-1 rounded border border-nexus-border/30 hover:bg-nexus-hover disabled:opacity-30" :disabled="tradePage>=totalTradePages" @click="tradePage++">Next</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Broker Orders View -->
+        <div x-show="view==='broker-orders'" x-cloak>
+            <div class="flex items-center gap-4 mb-4">
+                <div class="flex rounded-lg overflow-hidden border border-nexus-border/30">
+                    <button class="px-4 py-2 text-sm font-mono transition-colors cursor-pointer" :class="brokerTab==='orders'?'bg-nexus-border/30 text-nexus-bright':'text-nexus-dim hover:text-nexus-mid'" @click="brokerTab='orders'">Orders</button>
+                    <button class="px-4 py-2 text-sm font-mono transition-colors cursor-pointer" :class="brokerTab==='deals'?'bg-nexus-border/30 text-nexus-bright':'text-nexus-dim hover:text-nexus-mid'" @click="brokerTab='deals'">Executions</button>
+                </div>
+                <button @click="fetchBrokerData()" class="px-3 py-2 text-xs font-mono rounded border border-nexus-border/30 text-nexus-mid hover:text-nexus-bright hover:bg-nexus-hover transition-colors cursor-pointer">Refresh</button>
+            </div>
+
+            <!-- Orders Table -->
+            <div class="card" x-show="brokerTab==='orders'">
+                <div class="card-header flex items-center justify-between">
+                    <span>Broker Order History</span>
+                    <span class="text-nexus-mid text-xs font-mono" x-text="brokerOrders.length+' orders'"></span>
+                </div>
+                <div x-show="brokerOrders.length>0" class="overflow-auto" style="max-height:500px">
+                    <table class="data-table font-mono"><thead><tr>
+                        <th>Time</th><th>Ticker</th><th>Side</th><th class="text-right">Qty</th><th class="text-right">Filled</th><th class="text-right">Price</th><th>Type</th><th>Status</th>
+                    </tr></thead>
+                    <tbody><template x-for="o in brokerOrders" :key="o.order_id"><tr>
+                        <td class="text-nexus-dim text-xs" x-text="o.created_at ? o.created_at.substring(0,16).replace('T',' ') : '-'"></td>
+                        <td class="font-semibold" x-text="o.ticker"></td>
+                        <td><span class="badge" :class="o.side==='BUY'?'badge-long':'badge-short'" x-text="o.side"></span></td>
+                        <td class="text-right" x-text="o.qty"></td>
+                        <td class="text-right" x-text="o.filled_qty||0"></td>
+                        <td class="text-right" x-text="'$'+Number(o.price||0).toFixed(2)"></td>
+                        <td class="text-nexus-dim text-xs" x-text="o.order_type||'-'"></td>
+                        <td>
+                            <span class="px-1.5 py-0.5 text-[10px] rounded"
+                                :class="{'bg-green-500/20 text-green-400': o.status==='FILLED', 'bg-amber-500/20 text-amber-400': o.status==='SUBMITTED' || o.status==='PENDING', 'bg-red-500/20 text-red-400': o.status==='CANCELLED' || o.status==='REJECTED', 'bg-nexus-border/30 text-nexus-mid': !['FILLED','SUBMITTED','PENDING','CANCELLED','REJECTED'].includes(o.status)}"
+                                x-text="o.status"></span>
+                        </td>
+                    </tr></template></tbody></table>
+                </div>
+                <div x-show="brokerOrders.length===0" class="empty-state" style="padding:30px">
+                    <div class="title">No broker orders</div>
+                    <div class="desc">Orders placed via Moomoo will appear here. Click Refresh to update.</div>
+                </div>
+            </div>
+
+            <!-- Deals/Executions Table -->
+            <div class="card" x-show="brokerTab==='deals'">
+                <div class="card-header flex items-center justify-between">
+                    <span>Broker Executions (Fills)</span>
+                    <span class="text-nexus-mid text-xs font-mono" x-text="brokerDeals.length+' fills'"></span>
+                </div>
+                <div x-show="brokerDeals.length>0" class="overflow-auto" style="max-height:500px">
+                    <table class="data-table font-mono"><thead><tr>
+                        <th>Time</th><th>Ticker</th><th>Side</th><th class="text-right">Qty</th><th class="text-right">Price</th>
+                    </tr></thead>
+                    <tbody><template x-for="d in brokerDeals" :key="d.deal_id"><tr>
+                        <td class="text-nexus-dim text-xs" x-text="d.created_at ? d.created_at.substring(0,16).replace('T',' ') : '-'"></td>
+                        <td class="font-semibold" x-text="d.ticker"></td>
+                        <td><span class="badge" :class="d.side==='BUY'?'badge-long':'badge-short'" x-text="d.side"></span></td>
+                        <td class="text-right" x-text="d.qty"></td>
+                        <td class="text-right" x-text="'$'+Number(d.price||0).toFixed(2)"></td>
+                    </tr></template></tbody></table>
+                </div>
+                <div x-show="brokerDeals.length===0" class="empty-state" style="padding:30px">
+                    <div class="title">No broker executions</div>
+                    <div class="desc">Filled orders will appear here.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Scanner View -->
+        <div x-show="view==='scanner'" x-cloak>
+            <div class="grid grid-cols-2 gap-4 mb-4 grid-2col">
+                <div class="card">
+                    <div class="card-header flex items-center justify-between">
+                        <span>Static Watchlist</span>
+                        <span class="text-nexus-mid text-xs font-mono" x-text="(status.watchlist||[]).length+' tickers'"></span>
+                    </div>
+                    <div class="p-4">
+                        <div class="flex flex-wrap gap-2">
+                            <template x-for="t in (status.watchlist||[])" :key="t">
+                                <span class="px-2 py-1 text-xs font-mono rounded bg-nexus-border/20 text-nexus-bright border border-nexus-border/30" x-text="t"></span>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header flex items-center justify-between">
+                        <span>Scanner Discoveries</span>
+                        <span class="px-2 py-0.5 text-[10px] rounded" :class="status.scanner_enabled ? 'bg-green-500/20 text-green-400' : 'bg-nexus-border/20 text-nexus-dim'" x-text="status.scanner_enabled ? 'ACTIVE' : 'DISABLED'"></span>
+                    </div>
+                    <div class="p-4">
+                        <div x-show="(status.scanner_tickers||[]).length>0" class="flex flex-wrap gap-2">
+                            <template x-for="t in (status.scanner_tickers||[])" :key="t">
+                                <span class="px-2 py-1 text-xs font-mono rounded bg-nexus-gold/10 text-nexus-gold border border-nexus-gold/30" x-text="t"></span>
+                            </template>
+                        </div>
+                        <div x-show="(status.scanner_tickers||[]).length===0 && status.scanner_enabled" class="text-xs text-nexus-dim">Scanner is running — discoveries appear after the next scan cycle.</div>
+                        <div x-show="!status.scanner_enabled" class="text-xs text-nexus-dim">Enable with <span class="font-mono text-nexus-mid">--scan-universe</span> flag.</div>
+                    </div>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header flex items-center justify-between">
+                    <span>Scan Stats</span>
+                </div>
+                <div class="p-4 grid grid-cols-4 gap-4 font-mono text-sm">
+                    <div><div class="text-nexus-dim text-xs mb-1">TOTAL TICKERS</div><div class="text-lg font-semibold" x-text="status.total_tickers||((status.watchlist||[]).length)"></div></div>
+                    <div><div class="text-nexus-dim text-xs mb-1">VIX</div><div class="text-lg font-semibold" :style="(status.vix||20)>25?'color:var(--nexus-red)':'color:var(--nexus-green)'" x-text="(status.vix||20).toFixed(1)"></div></div>
+                    <div><div class="text-nexus-dim text-xs mb-1">SCAN COUNT</div><div class="text-lg font-semibold" x-text="status.scan_count||0"></div></div>
+                    <div><div class="text-nexus-dim text-xs mb-1">DTE MODE</div><div class="text-lg font-semibold" x-text="status.options_enabled ? 'Auto (0DTE→LEAPS)' : 'N/A'"></div></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

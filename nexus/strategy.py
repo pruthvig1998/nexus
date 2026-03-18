@@ -64,6 +64,11 @@ class Signal:
     catalysts: List[str] = field(default_factory=list)
     risks: List[str] = field(default_factory=list)
     ai_score: Optional[float] = None
+    instrument_type: str = "EQUITY"  # "EQUITY" | "CALL" | "PUT"
+    option_strike: float = 0.0
+    option_expiration: str = ""
+    option_code: str = ""
+    contracts: int = 0
 
 
 # ── Core signal computation ───────────────────────────────────────────────────

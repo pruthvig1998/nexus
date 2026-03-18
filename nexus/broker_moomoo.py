@@ -108,8 +108,12 @@ class MoomooBroker(BaseBroker):
         try:
             import moomoo as ft
 
-            self._quote_ctx = ft.OpenQuoteContext(host=self.host, port=self.port)
-            self._trade_ctx = ft.OpenSecTradeContext(
+            # Run blocking constructors in thread to avoid blocking event loop
+            self._quote_ctx = await asyncio.to_thread(
+                ft.OpenQuoteContext, host=self.host, port=self.port
+            )
+            self._trade_ctx = await asyncio.to_thread(
+                ft.OpenSecTradeContext,
                 filter_trdmarket=ft.TrdMarket.US,
                 host=self.host,
                 port=self.port,
@@ -246,7 +250,7 @@ class MoomooBroker(BaseBroker):
                         ticker=ticker,
                         shares=abs(qty),
                         avg_cost=float(row.get("cost_price", 0) or 0),
-                        current_price=float(row.get("market_val", 0) or 0) / max(abs(qty), 1),
+                        current_price=abs(float(row.get("market_val", 0) or 0)) / max(abs(qty), 1),
                         broker=self.name,
                         side=side,
                     )
@@ -410,6 +414,299 @@ class MoomooBroker(BaseBroker):
             return OrderResult(
                 order_id, "", OrderSide.BUY, 0, 0, 0, OrderStatus.REJECTED, self.name
             )
+
+    # ── Options ────────────────────────────────────────────────────────────────
+
+    async def get_option_expirations(self, ticker: str) -> list[str]:
+        """Get available option expiration dates for a ticker."""
+        if not await self._ensure_connected():
+            return []
+        try:
+            import moomoo as ft
+
+            code = _us(ticker)
+            ret, data = await asyncio.to_thread(
+                self._quote_ctx.get_option_expiration_date, code_list=[code]
+            )
+            if ret != ft.RET_OK or data.empty:
+                return []
+            # Column is 'strike_time' with datetime strings
+            dates = sorted(data["strike_time"].unique().tolist())
+            # Normalize to ISO date strings
+            result = []
+            for d in dates:
+                try:
+                    result.append(str(d)[:10])
+                except Exception:
+                    pass
+            return result
+        except Exception as e:
+            log.error("Moomoo get_option_expirations failed", ticker=ticker, error=str(e))
+            return []
+
+    async def get_option_chain(self, ticker: str, expiration: str) -> list:
+        """Get option chain for a ticker at a specific expiration."""
+        if not await self._ensure_connected():
+            return []
+        try:
+            import moomoo as ft
+
+            from nexus.broker import OptionsContract, OptionsQuote
+
+            code = _us(ticker)
+            ret, data = await asyncio.to_thread(
+                self._quote_ctx.get_option_chain,
+                code=code,
+                start=expiration,
+                end=expiration,
+            )
+            if ret != ft.RET_OK or data.empty:
+                log.warning("Option chain empty", ticker=ticker, expiration=expiration)
+                return []
+
+            # Get quotes for all option codes
+            option_codes = data["code"].tolist()
+            if not option_codes:
+                return []
+
+            # Fetch quotes in batches of 50
+            quotes_data = {}
+            for i in range(0, len(option_codes), 50):
+                batch = option_codes[i : i + 50]
+                qret, qdata = await asyncio.to_thread(
+                    self._quote_ctx.get_stock_quote, batch
+                )
+                if qret == ft.RET_OK and not qdata.empty:
+                    for _, qrow in qdata.iterrows():
+                        quotes_data[str(qrow["code"])] = qrow
+
+            result = []
+            for _, row in data.iterrows():
+                opt_code = str(row["code"])
+                strike = float(row.get("strike_price", 0) or 0)
+                opt_type_raw = str(row.get("option_type", "")).upper()
+                right = "CALL" if "CALL" in opt_type_raw else "PUT"
+
+                contract = OptionsContract(
+                    ticker=ticker,
+                    strike=strike,
+                    expiration=expiration,
+                    right=right,
+                    code=opt_code,
+                )
+
+                # Merge quote data if available
+                qrow = quotes_data.get(opt_code)
+                if qrow is not None:
+                    bid = float(qrow.get("bid_price", 0) or 0)
+                    ask = float(qrow.get("ask_price", 0) or 0)
+                    last = float(qrow.get("last_done", 0) or 0)
+                    vol = int(qrow.get("volume", 0) or 0)
+                    oi = int(qrow.get("open_interest", 0) or 0)
+                else:
+                    bid = ask = last = 0.0
+                    vol = oi = 0
+
+                result.append(
+                    OptionsQuote(
+                        contract=contract,
+                        bid=bid,
+                        ask=ask,
+                        last=last,
+                        volume=vol,
+                        open_interest=oi,
+                        implied_vol=0.0,  # populated if snapshot available
+                    )
+                )
+            return result
+        except Exception as e:
+            log.error("Moomoo get_option_chain failed", ticker=ticker, error=str(e))
+            return []
+
+    async def place_options_order(
+        self,
+        contract,
+        side,
+        qty: int,
+        order_type=None,
+        limit_price=None,
+    ) -> OrderResult:
+        """Place an options order via the option contract code."""
+        if not await self._ensure_connected():
+            from nexus.broker import OrderResult, OrderSide, OrderStatus
+            return OrderResult(
+                "", contract.ticker, side, qty, 0, 0, OrderStatus.REJECTED, self.name, "Not connected"
+            )
+        try:
+            import moomoo as ft
+
+            from nexus.broker import OrderResult, OrderStatus
+            from nexus.broker import OrderType as OT
+
+            if order_type is None:
+                from nexus.broker import OrderType as OT
+                order_type = OT.LIMIT
+
+            env = ft.TrdEnv.SIMULATE if self.trade_env == MoomooTrdEnv.SIMULATE else ft.TrdEnv.REAL
+            code = contract.code
+            if not code:
+                return OrderResult(
+                    "", contract.ticker, side, qty, 0, 0,
+                    OrderStatus.REJECTED, self.name, "No option code"
+                )
+
+            from nexus.broker import OrderSide
+            trd_side = ft.TrdSide.BUY if side == OrderSide.BUY else ft.TrdSide.SELL
+
+            if order_type == OT.MARKET:
+                price = 0.0
+                ord_type = ft.OrderType.MARKET
+            else:
+                price = round(limit_price or 0.0, 2)
+                ord_type = ft.OrderType.NORMAL
+
+            ret, data = await asyncio.to_thread(
+                self._trade_ctx.place_order,
+                price=price,
+                qty=int(qty),
+                code=code,
+                trd_side=trd_side,
+                order_type=ord_type,
+                trd_env=env,
+            )
+            if ret != ft.RET_OK or data.empty:
+                return OrderResult(
+                    "", contract.ticker, side, qty, 0, 0,
+                    OrderStatus.REJECTED, self.name, str(data),
+                )
+            order_id = str(data.iloc[0].get("order_id", ""))
+            return OrderResult(
+                order_id=order_id,
+                ticker=contract.ticker,
+                side=side,
+                requested_qty=qty,
+                filled_qty=0.0,
+                avg_fill_price=price,
+                status=OrderStatus.SUBMITTED,
+                broker=self.name,
+            )
+        except Exception as e:
+            log.error("Moomoo place_options_order failed", ticker=contract.ticker, error=str(e))
+            from nexus.broker import OrderResult, OrderStatus
+            return OrderResult(
+                "", contract.ticker, side, qty, 0, 0,
+                OrderStatus.REJECTED, self.name, str(e),
+            )
+
+    async def get_order_history(self, limit: int = 50) -> List[dict]:
+        """Get order history from Moomoo (current session + history)."""
+        if not await self._ensure_connected():
+            return []
+        try:
+            import moomoo as ft
+
+            env = ft.TrdEnv.SIMULATE if self.trade_env == MoomooTrdEnv.SIMULATE else ft.TrdEnv.REAL
+            result = []
+
+            # Current session orders
+            ret, data = await asyncio.to_thread(self._trade_ctx.order_list_query, trd_env=env)
+            if ret == ft.RET_OK and not data.empty:
+                for _, row in data.iterrows():
+                    result.append(self._parse_order_row(row))
+
+            # Historical orders (previous sessions)
+            try:
+                ret2, data2 = await asyncio.to_thread(
+                    self._trade_ctx.history_order_list_query,
+                    trd_env=env, status_filter_list=[], start="", end="",
+                )
+                if ret2 == ft.RET_OK and not data2.empty:
+                    existing_ids = {o["order_id"] for o in result}
+                    for _, row in data2.iterrows():
+                        parsed = self._parse_order_row(row)
+                        if parsed["order_id"] not in existing_ids:
+                            result.append(parsed)
+            except Exception:
+                pass  # history_order_list_query may not be available
+
+            # Sort by created_at descending
+            result.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+            return result[:limit]
+        except Exception as e:
+            log.error("Moomoo get_order_history failed", error=str(e))
+            return []
+
+    async def get_deal_history(self, limit: int = 50) -> List[dict]:
+        """Get deal/execution history from Moomoo."""
+        if not await self._ensure_connected():
+            return []
+        try:
+            import moomoo as ft
+
+            env = ft.TrdEnv.SIMULATE if self.trade_env == MoomooTrdEnv.SIMULATE else ft.TrdEnv.REAL
+            result = []
+
+            # Try current session deals first
+            try:
+                ret, data = await asyncio.to_thread(self._trade_ctx.deal_list_query, trd_env=env)
+                if ret == ft.RET_OK and not data.empty:
+                    for _, row in data.iterrows():
+                        result.append(self._parse_deal_row(row))
+            except Exception:
+                pass  # Simulated trade does not support deal list
+
+            # Try historical deals
+            try:
+                ret2, data2 = await asyncio.to_thread(
+                    self._trade_ctx.history_deal_list_query, trd_env=env,
+                )
+                if ret2 == ft.RET_OK and not data2.empty:
+                    existing_ids = {d["deal_id"] for d in result}
+                    for _, row in data2.iterrows():
+                        parsed = self._parse_deal_row(row)
+                        if parsed["deal_id"] not in existing_ids:
+                            result.append(parsed)
+            except Exception:
+                pass  # history_deal_list_query may not be available
+
+            result.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+            return result[:limit]
+        except Exception as e:
+            log.error("Moomoo get_deal_history failed", error=str(e))
+            return []
+
+    def _parse_order_row(self, row) -> dict:
+        """Parse a Moomoo order row into a standardized dict."""
+        trd_side_str = str(row.get("trd_side", "BUY")).upper()
+        side = "BUY" if "BUY" in trd_side_str else "SELL"
+        return {
+            "order_id": str(row.get("order_id", "")),
+            "ticker": _bare(str(row.get("code", ""))),
+            "stock_name": str(row.get("stock_name", "")),
+            "side": side,
+            "qty": float(row.get("qty", 0) or 0),
+            "filled_qty": float(row.get("dealt_qty", 0) or 0),
+            "price": float(row.get("price", 0) or 0),
+            "avg_fill_price": float(row.get("dealt_avg_price", 0) or 0),
+            "status": self._map_status(str(row.get("order_status", ""))).value,
+            "created_at": str(row.get("create_time", "")),
+            "updated_at": str(row.get("updated_time", "")),
+            "order_type": str(row.get("order_type", "")),
+        }
+
+    @staticmethod
+    def _parse_deal_row(row) -> dict:
+        """Parse a Moomoo deal row into a standardized dict."""
+        trd_side_str = str(row.get("trd_side", "BUY")).upper()
+        side = "BUY" if "BUY" in trd_side_str else "SELL"
+        return {
+            "deal_id": str(row.get("deal_id", "")),
+            "ticker": _bare(str(row.get("code", ""))),
+            "side": side,
+            "qty": float(row.get("qty", 0) or 0),
+            "price": float(row.get("price", 0) or 0),
+            "created_at": str(row.get("create_time", "")),
+        }
 
     @staticmethod
     def _map_status(futu_status: str) -> OrderStatus:

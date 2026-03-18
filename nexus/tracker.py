@@ -28,7 +28,14 @@ CREATE TABLE IF NOT EXISTS trades (
     strategy TEXT, signal_score REAL,
     pnl REAL, exit_reason TEXT,
     opened_at TEXT, closed_at TEXT,
-    paper INTEGER
+    paper INTEGER,
+    instrument_type TEXT DEFAULT 'EQUITY',
+    option_strike REAL DEFAULT 0,
+    option_expiration TEXT DEFAULT '',
+    option_code TEXT DEFAULT '',
+    grid_level INTEGER DEFAULT 0,
+    trailing_stop REAL DEFAULT 0,
+    original_shares REAL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS daily_pnl (
     date TEXT PRIMARY KEY, pnl REAL, trades INTEGER
@@ -56,6 +63,21 @@ class PortfolioTracker:
             self._persistent_conn.execute("PRAGMA journal_mode=WAL")
             self._persistent_conn.row_factory = sqlite3.Row
             self._persistent_conn.executescript(SCHEMA)
+            # Migrate: add options columns if missing
+            try:
+                self._persistent_conn.execute("SELECT instrument_type FROM trades LIMIT 1")
+            except sqlite3.OperationalError:
+                self._persistent_conn.execute("ALTER TABLE trades ADD COLUMN instrument_type TEXT DEFAULT 'EQUITY'")
+                self._persistent_conn.execute("ALTER TABLE trades ADD COLUMN option_strike REAL DEFAULT 0")
+                self._persistent_conn.execute("ALTER TABLE trades ADD COLUMN option_expiration TEXT DEFAULT ''")
+                self._persistent_conn.execute("ALTER TABLE trades ADD COLUMN option_code TEXT DEFAULT ''")
+            # Migrate: add grid columns if missing
+            try:
+                self._persistent_conn.execute("SELECT grid_level FROM trades LIMIT 1")
+            except sqlite3.OperationalError:
+                self._persistent_conn.execute("ALTER TABLE trades ADD COLUMN grid_level INTEGER DEFAULT 0")
+                self._persistent_conn.execute("ALTER TABLE trades ADD COLUMN trailing_stop REAL DEFAULT 0")
+                self._persistent_conn.execute("ALTER TABLE trades ADD COLUMN original_shares REAL DEFAULT 0")
             self._persistent_conn.commit()
         else:
             self._persistent_conn = None
@@ -64,6 +86,23 @@ class PortfolioTracker:
     def _init_db(self) -> None:
         with self._conn() as conn:
             conn.executescript(SCHEMA)
+            # Migrate: add options columns if missing
+            try:
+                conn.execute("SELECT instrument_type FROM trades LIMIT 1")
+            except sqlite3.OperationalError:
+                conn.execute("ALTER TABLE trades ADD COLUMN instrument_type TEXT DEFAULT 'EQUITY'")
+                conn.execute("ALTER TABLE trades ADD COLUMN option_strike REAL DEFAULT 0")
+                conn.execute("ALTER TABLE trades ADD COLUMN option_expiration TEXT DEFAULT ''")
+                conn.execute("ALTER TABLE trades ADD COLUMN option_code TEXT DEFAULT ''")
+                conn.commit()
+            # Migrate: add grid columns if missing
+            try:
+                conn.execute("SELECT grid_level FROM trades LIMIT 1")
+            except sqlite3.OperationalError:
+                conn.execute("ALTER TABLE trades ADD COLUMN grid_level INTEGER DEFAULT 0")
+                conn.execute("ALTER TABLE trades ADD COLUMN trailing_stop REAL DEFAULT 0")
+                conn.execute("ALTER TABLE trades ADD COLUMN original_shares REAL DEFAULT 0")
+                conn.commit()
 
     @contextmanager
     def _conn(self):
@@ -102,6 +141,10 @@ class PortfolioTracker:
         strategy: str,
         signal_score: float,
         paper: bool = True,
+        instrument_type: str = "EQUITY",
+        option_strike: float = 0.0,
+        option_expiration: str = "",
+        option_code: str = "",
     ) -> str:
         """Open a new trade. side should be "LONG" or "SHORT"."""
         trade_id = str(uuid.uuid4())
@@ -109,8 +152,10 @@ class PortfolioTracker:
             conn.execute(
                 """INSERT INTO trades
                    (id,broker,ticker,side,shares,entry_price,stop_price,
-                    target_price,strategy,signal_score,opened_at,paper)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    target_price,strategy,signal_score,opened_at,paper,
+                    instrument_type,option_strike,option_expiration,option_code,
+                    original_shares)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     trade_id,
                     broker,
@@ -124,6 +169,11 @@ class PortfolioTracker:
                     signal_score,
                     datetime.now(timezone.utc).isoformat(),
                     int(paper),
+                    instrument_type,
+                    option_strike,
+                    option_expiration,
+                    option_code,
+                    shares,  # original_shares = initial shares
                 ),
             )
         log.info(
@@ -146,10 +196,12 @@ class PortfolioTracker:
                 return None
             trade = dict(row)
             side = trade.get("side", "LONG")
+            inst_type = trade.get("instrument_type", "EQUITY")
+            multiplier = 100 if inst_type in ("CALL", "PUT") else 1
             if side == "SHORT":
-                pnl = (trade["entry_price"] - exit_price) * trade["shares"]
+                pnl = (trade["entry_price"] - exit_price) * trade["shares"] * multiplier
             else:
-                pnl = (exit_price - trade["entry_price"]) * trade["shares"]
+                pnl = (exit_price - trade["entry_price"]) * trade["shares"] * multiplier
             conn.execute(
                 "UPDATE trades SET exit_price=?,pnl=?,exit_reason=?,closed_at=? WHERE id=?",
                 (exit_price, pnl, exit_reason, datetime.now(timezone.utc).isoformat(), trade_id),
@@ -181,6 +233,99 @@ class PortfolioTracker:
                 (limit,),
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def partial_close_trade(
+        self,
+        trade_id: str,
+        exit_qty: float,
+        exit_price: float,
+        exit_reason: str = "grid_trim",
+    ) -> Optional[float]:
+        """Partially close a trade — sell some contracts/shares, keep the rest.
+
+        Returns the partial P&L, or None if trade not found.
+        If remaining shares reach 0, fully closes the trade.
+        """
+        with self._conn() as conn:
+            row = conn.execute("SELECT * FROM trades WHERE id=?", (trade_id,)).fetchone()
+            if not row:
+                return None
+            trade = dict(row)
+            side = trade.get("side", "LONG")
+            inst_type = trade.get("instrument_type", "EQUITY")
+            multiplier = 100 if inst_type in ("CALL", "PUT") else 1
+            current_shares = trade["shares"]
+
+            # Clamp exit_qty to available shares
+            exit_qty = min(exit_qty, current_shares)
+            if exit_qty <= 0:
+                return None
+
+            if side == "SHORT":
+                partial_pnl = (trade["entry_price"] - exit_price) * exit_qty * multiplier
+            else:
+                partial_pnl = (exit_price - trade["entry_price"]) * exit_qty * multiplier
+
+            remaining = current_shares - exit_qty
+
+            if remaining <= 0:
+                # Fully close the trade
+                total_pnl = partial_pnl
+                conn.execute(
+                    "UPDATE trades SET exit_price=?,pnl=?,exit_reason=?,closed_at=?,shares=0 WHERE id=?",
+                    (exit_price, total_pnl, exit_reason, datetime.now(timezone.utc).isoformat(), trade_id),
+                )
+            else:
+                # Reduce shares, accumulate partial P&L
+                existing_pnl = trade.get("pnl") or 0
+                conn.execute(
+                    "UPDATE trades SET shares=?, pnl=? WHERE id=?",
+                    (remaining, existing_pnl + partial_pnl, trade_id),
+                )
+
+            # Record daily P&L
+            today = date.today().isoformat()
+            conn.execute(
+                """INSERT INTO daily_pnl (date,pnl,trades) VALUES (?,?,0)
+                   ON CONFLICT(date) DO UPDATE SET pnl=pnl+excluded.pnl""",
+                (today, partial_pnl),
+            )
+        log.info(
+            "Partial close",
+            id=trade_id[:8],
+            exit_qty=exit_qty,
+            remaining=remaining,
+            pnl=f"${partial_pnl:+.2f}",
+            reason=exit_reason,
+        )
+        return partial_pnl
+
+    def update_trade_prices(self, trade_id: str, stop_price: Optional[float] = None, target_price: Optional[float] = None) -> bool:
+        """Update stop and/or target price on an open trade."""
+        with self._conn() as conn:
+            row = conn.execute("SELECT id FROM trades WHERE id=? AND closed_at IS NULL", (trade_id,)).fetchone()
+            if not row:
+                return False
+            updates = []
+            params = []
+            if stop_price is not None:
+                updates.append("stop_price=?")
+                params.append(stop_price)
+            if target_price is not None:
+                updates.append("target_price=?")
+                params.append(target_price)
+            if updates:
+                params.append(trade_id)
+                conn.execute(f"UPDATE trades SET {','.join(updates)} WHERE id=?", params)  # noqa: S608
+        return True
+
+    def update_grid_level(self, trade_id: str, level: int, trailing_stop: float = 0.0) -> None:
+        """Update IronGrid level and trailing stop for a trade."""
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE trades SET grid_level=?, trailing_stop=? WHERE id=?",
+                (level, trailing_stop, trade_id),
+            )
 
     # ── Daily P&L ─────────────────────────────────────────────────────────
 

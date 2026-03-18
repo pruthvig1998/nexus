@@ -52,6 +52,38 @@ class OrderStatus(str, Enum):
 
 
 @dataclass
+class OptionsContract:
+    """A single options contract."""
+
+    ticker: str  # underlying: "AAPL"
+    strike: float  # strike price
+    expiration: str  # ISO date: "2025-03-21"
+    right: str  # "CALL" | "PUT"
+    code: str = ""  # broker-specific code (e.g. "US.AAPL250321C00150000")
+
+
+@dataclass
+class OptionsQuote:
+    """Quote data for an options contract including Greeks."""
+
+    contract: OptionsContract
+    bid: float
+    ask: float
+    last: float
+    volume: int
+    open_interest: int
+    implied_vol: float
+    delta: float = 0.0
+    gamma: float = 0.0
+    theta: float = 0.0
+    vega: float = 0.0
+
+    @property
+    def mid(self) -> float:
+        return (self.bid + self.ask) / 2
+
+
+@dataclass
 class Quote:
     ticker: str
     bid: float
@@ -84,16 +116,28 @@ class Position:
     current_price: float
     broker: str
     side: str = "LONG"  # "LONG" | "SHORT"
+    instrument_type: str = "EQUITY"  # "EQUITY" | "CALL" | "PUT"
+    strike: float = 0.0
+    expiration: str = ""
+    option_code: str = ""
+    contract_multiplier: int = 100
+
+    @property
+    def is_option(self) -> bool:
+        return self.instrument_type in ("CALL", "PUT")
 
     @property
     def market_value(self) -> float:
+        if self.is_option:
+            return self.shares * self.current_price * self.contract_multiplier
         return self.shares * self.current_price
 
     @property
     def unrealized_pnl(self) -> float:
+        mult = self.contract_multiplier if self.is_option else 1
         if self.side == "SHORT":
-            return (self.avg_cost - self.current_price) * self.shares
-        return (self.current_price - self.avg_cost) * self.shares
+            return (self.avg_cost - self.current_price) * self.shares * mult
+        return (self.current_price - self.avg_cost) * self.shares * mult
 
     @property
     def unrealized_pnl_pct(self) -> float:
@@ -199,6 +243,40 @@ class BaseBroker(ABC):
 
     async def is_market_open(self) -> bool:
         return True
+
+    # ── Options (default no-ops — override in brokers that support options) ───
+
+    async def get_option_expirations(self, ticker: str) -> List[str]:
+        """Return available expiration dates (ISO format) for the underlying."""
+        return []
+
+    async def get_option_chain(
+        self, ticker: str, expiration: str
+    ) -> List[OptionsQuote]:
+        """Return option quotes for all strikes at a given expiration."""
+        return []
+
+    async def place_options_order(
+        self,
+        contract: OptionsContract,
+        side: OrderSide,
+        qty: int,
+        order_type: OrderType = OrderType.LIMIT,
+        limit_price: Optional[float] = None,
+    ) -> OrderResult:
+        """Place an options order. Override in brokers that support options."""
+        return OrderResult(
+            "", contract.ticker, side, qty, 0, 0,
+            OrderStatus.REJECTED, self.name, f"{self.name} does not support options",
+        )
+
+    async def get_order_history(self, limit: int = 50) -> List[dict]:
+        """Get recent order history from the broker."""
+        return []
+
+    async def get_deal_history(self, limit: int = 50) -> List[dict]:
+        """Get recent deal/execution history from the broker."""
+        return []
 
 
 # ── Alpaca ────────────────────────────────────────────────────────────────────
