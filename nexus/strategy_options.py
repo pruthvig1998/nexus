@@ -1,7 +1,8 @@
 """Options strategy — converts equity signals to options trades (calls/puts).
 
 When enabled, strong BUY signals → buy CALL, strong SELL signals → buy PUT.
-Selects contracts near target DTE with appropriate strike selection.
+Uses the DTE engine for intelligent expiration selection (0DTE through LEAPS)
+based on strategy type, VIX, and signal conviction.
 """
 
 from __future__ import annotations
@@ -20,10 +21,21 @@ if TYPE_CHECKING:
 log = get_logger("strategy.options")
 
 
-def select_expiration(expirations: List[str], cfg: OptionsConfig) -> Optional[str]:
-    """Pick the expiration closest to target_dte within [min_dte, max_dte]."""
+def select_expiration(
+    expirations: List[str],
+    cfg: OptionsConfig,
+    target_dte_override: Optional[int] = None,
+    min_dte_override: Optional[int] = None,
+    max_dte_override: Optional[int] = None,
+) -> Optional[str]:
+    """Pick the expiration closest to target_dte within [min_dte, max_dte].
+
+    If overrides are provided (from DTE engine), they take precedence over cfg.
+    """
     today = datetime.now().date()
-    target = today + timedelta(days=cfg.target_dte)
+    min_dte = min_dte_override if min_dte_override is not None else cfg.min_dte
+    max_dte = max_dte_override if max_dte_override is not None else cfg.max_dte
+    target = today + timedelta(days=target_dte_override if target_dte_override is not None else cfg.target_dte)
     best: Optional[str] = None
     best_dist = float("inf")
 
@@ -33,7 +45,7 @@ def select_expiration(expirations: List[str], cfg: OptionsConfig) -> Optional[st
         except ValueError:
             continue
         dte = (exp_date - today).days
-        if dte < cfg.min_dte or dte > cfg.max_dte:
+        if dte < min_dte or dte > max_dte:
             continue
         dist = abs((exp_date - target).days)
         if dist < best_dist:
@@ -97,10 +109,12 @@ async def convert_signal_to_option(
     signal: Signal,
     broker: BaseBroker,
     portfolio_value: float,
+    vix: float = 20.0,
 ) -> Optional[Signal]:
     """Convert an equity signal to an options signal.
 
     BUY → buy CALL, SELL → buy PUT.
+    Uses DTE engine for intelligent expiration selection when auto_dte is True.
     Returns None if no suitable contract found.
     """
     cfg = get_config().options
@@ -119,8 +133,32 @@ async def convert_signal_to_option(
         log.debug("No option expirations available", ticker=ticker)
         return None
 
-    # Select expiration
-    exp = select_expiration(expirations, cfg)
+    # Use DTE engine for intelligent selection, or fall back to fixed target
+    if cfg.auto_dte:
+        from nexus.dte_engine import recommend_target_dte, select_dte_profile
+
+        min_dte, max_dte = select_dte_profile(signal.strategy, signal.score, vix)
+        target = recommend_target_dte(signal.strategy, signal.score, vix)
+        exp = select_expiration(
+            expirations, cfg,
+            target_dte_override=target,
+            min_dte_override=min_dte,
+            max_dte_override=max_dte,
+        )
+        if not exp:
+            # Fall back to broader range if DTE engine range found nothing
+            exp = select_expiration(expirations, cfg)
+        log.debug(
+            "DTE engine selected",
+            ticker=ticker,
+            strategy=signal.strategy,
+            dte_range=f"{min_dte}-{max_dte}",
+            target=target,
+            selected_exp=exp,
+        )
+    else:
+        exp = select_expiration(expirations, cfg)
+
     if not exp:
         log.debug("No suitable expiration found", ticker=ticker, min_dte=cfg.min_dte, max_dte=cfg.max_dte)
         return None

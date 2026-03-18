@@ -133,17 +133,28 @@ class OptionsConfig:
         default_factory=lambda: os.getenv("NEXUS_OPTIONS_ENABLED", "false").lower() == "true"
     )
     min_dte: int = 0  # minimum days to expiration (0 = allow 0DTE)
-    max_dte: int = 45  # maximum days to expiration
-    target_dte: int = 0  # preferred DTE (0 = same-day/0DTE)
+    max_dte: int = 730  # maximum days to expiration (supports LEAPS)
+    target_dte: int = 0  # preferred DTE (0 = auto-select via DTE engine)
+    auto_dte: bool = True  # use DTE engine for intelligent DTE selection
     strike_offset: int = 1  # 0=ATM, 1=1 strike OTM, 2=2 strikes OTM
     max_premium: float = 0.0  # max premium per contract (0 = no limit)
     max_premium_pct: float = 0.02  # max 2% of portfolio per option trade
     min_open_interest: int = 100
     min_volume: int = 10
     min_signal_score: float = 0.70  # higher threshold for options (leveraged)
-    profit_target_pct: float = 0.50  # take profit at 50% gain
-    stop_loss_pct: float = 0.50  # stop at 50% loss
+    profit_target_pct: float = 0.50  # take profit at 50% gain (fallback if grid disabled)
+    stop_loss_pct: float = 0.50  # stop at 50% loss (fallback if grid disabled)
     min_dte_exit: int = 7  # close if < 7 DTE remaining
+    use_irongrid_exits: bool = True  # use IronGrid profit ladder for exits
+
+
+@dataclass
+class ScannerConfig:
+    enabled: bool = field(
+        default_factory=lambda: os.getenv("NEXUS_SCANNER_ENABLED", "false").lower() == "true"
+    )
+    max_tickers: int = 20  # max extra tickers to add per scan
+    scan_interval: int = 300  # seconds between universe scans (5 min)
 
 
 @dataclass
@@ -175,6 +186,7 @@ class NEXUSConfig:
     twitter: TwitterConfig = field(default_factory=TwitterConfig)
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     options: OptionsConfig = field(default_factory=OptionsConfig)
+    scanner: ScannerConfig = field(default_factory=ScannerConfig)
     db_path: str = "nexus.db"
     log_level: str = "INFO"
 

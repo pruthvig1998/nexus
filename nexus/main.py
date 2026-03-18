@@ -170,6 +170,13 @@ def backtest(tickers, years, capital, output, log_level):
     show_default=True,
     help="Max premium per contract (0 = no limit)",
 )
+@click.option(
+    "--scan-universe",
+    "use_scanner",
+    is_flag=True,
+    default=False,
+    help="Scan 100+ tickers beyond watchlist for momentum/volume opportunities",
+)
 def run(
     paper,
     broker_name,
@@ -186,6 +193,7 @@ def run(
     use_options,
     target_dte,
     max_premium,
+    use_scanner,
 ):
     """Start the live long/short trading engine with Rich dashboard."""
     from nexus.logger import setup_logging
@@ -208,8 +216,12 @@ def run(
         cfg.options.enabled = True
         cfg.options.target_dte = target_dte
         cfg.options.min_dte = 0 if target_dte == 0 else max(target_dte - 7, 0)
+        cfg.options.max_dte = 730  # support LEAPS
+        cfg.options.auto_dte = True  # intelligent DTE selection
         if max_premium > 0:
             cfg.options.max_premium = max_premium
+    if use_scanner:
+        cfg.scanner.enabled = True
 
     try:
         cfg.validate()
@@ -249,9 +261,14 @@ def run(
     click.echo(f"Starting NEXUS v3 [{mode}] — broker: {broker_name.upper()} — {trade_mode}")
     click.echo(f"Watchlist: {', '.join(cfg.watchlist)}")
     if use_options:
-        dte_label = "0DTE (same-day)" if cfg.options.target_dte == 0 else f"{cfg.options.target_dte}d"
+        dte_label = "Auto (0DTE→LEAPS)" if cfg.options.auto_dte else (
+            "0DTE (same-day)" if cfg.options.target_dte == 0 else f"{cfg.options.target_dte}d"
+        )
         prem_label = f", max premium=${cfg.options.max_premium:.2f}" if cfg.options.max_premium > 0 else ""
-        click.echo(f"Options: target DTE={dte_label}{prem_label}")
+        grid_label = ", IronGrid exits" if cfg.options.use_irongrid_exits else ""
+        click.echo(f"Options: DTE={dte_label}{prem_label}{grid_label}")
+    if use_scanner:
+        click.echo("Universe scanner: ON (scanning 100+ tickers for momentum/volume)")
     click.echo(f"Scan interval: {scan_interval}s  |  Press Ctrl+C to stop\n")
 
     async def _run():

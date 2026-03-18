@@ -467,3 +467,266 @@ def test_import_create_app():
     from nexus.web.api import create_app
 
     assert create_app is not None
+
+
+# ── DTE Engine Tests ────────────────────────────────────────────────────────
+
+
+def test_dte_engine_momentum_scalp():
+    from nexus.dte_engine import SCALP, select_dte_profile
+
+    min_dte, max_dte = select_dte_profile("momentum", signal_score=0.75, vix=20.0)
+    # Momentum at normal VIX → SCALP range
+    assert min_dte == SCALP[0]
+    assert max_dte == SCALP[1]
+
+
+def test_dte_engine_fundamental_position():
+    from nexus.dte_engine import select_dte_profile
+
+    min_dte, max_dte = select_dte_profile("ai_fundamental", signal_score=0.75, vix=20.0)
+    # AI fundamental at normal VIX → POSITION range
+    assert min_dte >= 14
+    assert max_dte <= 45
+
+
+def test_dte_engine_high_vix_shifts_shorter():
+    from nexus.dte_engine import select_dte_profile
+
+    # Mean reversion at normal VIX
+    normal = select_dte_profile("mean_reversion", signal_score=0.75, vix=20.0)
+    # Same strategy at high VIX
+    high_vix = select_dte_profile("mean_reversion", signal_score=0.75, vix=28.0)
+    # High VIX should shift shorter
+    assert high_vix[1] <= normal[1]
+
+
+def test_dte_engine_low_vix_shifts_longer():
+    from nexus.dte_engine import select_dte_profile
+
+    # Momentum at normal VIX
+    normal = select_dte_profile("momentum", signal_score=0.75, vix=20.0)
+    # Same strategy at very low VIX
+    low_vix = select_dte_profile("momentum", signal_score=0.75, vix=12.0)
+    # Low VIX should shift longer (premium is cheap)
+    assert low_vix[1] >= normal[1]
+
+
+def test_dte_engine_high_conviction_shifts_longer():
+    from nexus.dte_engine import select_dte_profile
+
+    # Low conviction
+    low = select_dte_profile("momentum", signal_score=0.65, vix=20.0)
+    # High conviction
+    high = select_dte_profile("momentum", signal_score=0.90, vix=20.0)
+    # High conviction should shift longer
+    assert high[1] >= low[1]
+
+
+def test_dte_engine_recommend_target():
+    from nexus.dte_engine import recommend_target_dte
+
+    target = recommend_target_dte("momentum", signal_score=0.75, vix=20.0)
+    assert 0 <= target <= 5  # momentum should be short DTE
+
+
+def test_dte_engine_leaps_low_vix_fundamental():
+    from nexus.dte_engine import select_dte_profile
+
+    min_dte, max_dte = select_dte_profile("ai_fundamental", signal_score=0.90, vix=12.0)
+    # High conviction + low VIX + fundamental → should reach LEAPS range
+    assert max_dte >= 45  # at least multi-month
+
+
+def test_dte_engine_extreme_vix():
+    from nexus.dte_engine import select_dte_profile
+
+    min_dte, max_dte = select_dte_profile("mean_reversion", signal_score=0.75, vix=35.0)
+    # Extreme VIX: max_dte capped at 7
+    assert max_dte <= 7
+
+
+def test_select_expiration_with_overrides():
+    from datetime import datetime, timedelta
+
+    from nexus.config import OptionsConfig
+    from nexus.strategy_options import select_expiration
+
+    cfg = OptionsConfig(min_dte=0, max_dte=730)
+    today = datetime.now().date()
+    exp_short = (today + timedelta(days=1)).isoformat()
+    exp_mid = (today + timedelta(days=30)).isoformat()
+    exp_long = (today + timedelta(days=200)).isoformat()
+
+    # Override to LEAPS range
+    result = select_expiration(
+        [exp_short, exp_mid, exp_long], cfg,
+        target_dte_override=180,
+        min_dte_override=150,
+        max_dte_override=400,
+    )
+    assert result == exp_long[:10]
+
+
+# ── IronGrid Grid Exit Tests ────────────────────────────────────────────────
+
+
+def test_tracker_partial_close():
+    from nexus.tracker import PortfolioTracker
+
+    t = PortfolioTracker(":memory:")
+    tid = t.open_trade(
+        broker="moomoo",
+        ticker="AAPL",
+        side="LONG",
+        shares=4,
+        entry_price=3.50,
+        stop_price=1.75,
+        target_price=5.25,
+        strategy="irongrid",
+        signal_score=0.85,
+        paper=True,
+        instrument_type="CALL",
+        option_strike=150.0,
+        option_expiration="2025-04-17",
+        option_code="US.AAPL250417C00150000",
+    )
+
+    # Partial close: sell 1 of 4 contracts at $4.50
+    pnl = t.partial_close_trade(tid, 1, 4.50, "grid_L1_trim_25pct")
+    assert pnl is not None
+    # CALL P&L: (4.50 - 3.50) * 1 * 100 = 100
+    assert pnl == 100.0
+
+    # Check remaining shares
+    trades = t.get_open_trades()
+    assert len(trades) == 1
+    assert trades[0]["shares"] == 3  # 4 - 1 = 3
+
+    # Full close remaining
+    final_pnl = t.close_trade(tid, 5.00, "profit_target")
+    # Remaining P&L: (5.00 - 3.50) * 3 * 100 = 450, plus accumulated 100 = 550
+    assert final_pnl is not None
+
+
+def test_tracker_grid_level_update():
+    from nexus.tracker import PortfolioTracker
+
+    t = PortfolioTracker(":memory:")
+    tid = t.open_trade(
+        broker="moomoo",
+        ticker="NVDA",
+        side="LONG",
+        shares=10,
+        entry_price=2.00,
+        stop_price=1.00,
+        target_price=4.00,
+        strategy="irongrid",
+        signal_score=0.80,
+        paper=True,
+        instrument_type="CALL",
+        option_strike=200.0,
+        option_expiration="2025-05-16",
+        option_code="US.NVDA250516C00200000",
+    )
+
+    # Update grid level
+    t.update_grid_level(tid, 1, trailing_stop=2.00)
+    trades = t.get_open_trades()
+    assert trades[0]["grid_level"] == 1
+    assert trades[0]["trailing_stop"] == 2.00
+
+
+def test_tracker_original_shares_stored():
+    from nexus.tracker import PortfolioTracker
+
+    t = PortfolioTracker(":memory:")
+    tid = t.open_trade(
+        broker="test",
+        ticker="TSLA",
+        side="LONG",
+        shares=8,
+        entry_price=5.00,
+        stop_price=2.50,
+        target_price=10.00,
+        strategy="momentum",
+        signal_score=0.85,
+        paper=True,
+        instrument_type="PUT",
+    )
+    trades = t.get_open_trades()
+    assert trades[0]["original_shares"] == 8
+
+
+def test_partial_close_clamps_to_available():
+    from nexus.tracker import PortfolioTracker
+
+    t = PortfolioTracker(":memory:")
+    tid = t.open_trade(
+        broker="test",
+        ticker="MSFT",
+        side="LONG",
+        shares=2,
+        entry_price=3.00,
+        stop_price=1.50,
+        target_price=6.00,
+        strategy="irongrid",
+        signal_score=0.80,
+        paper=True,
+        instrument_type="CALL",
+    )
+    # Try to close more than available — should clamp
+    pnl = t.partial_close_trade(tid, 5, 4.00, "grid_trim")
+    assert pnl is not None
+    # Should close all 2 contracts, (4.00-3.00)*2*100 = 200
+    assert pnl == 200.0
+    # Trade should be fully closed
+    trades = t.get_open_trades()
+    assert len(trades) == 0
+
+
+# ── Scanner Tests ───────────────────────────────────────────────────────────
+
+
+def test_scanner_base_universe():
+    from nexus.scanner import BASE_UNIVERSE
+
+    assert len(BASE_UNIVERSE) > 50
+    assert "AAPL" in BASE_UNIVERSE
+    assert "SPY" in BASE_UNIVERSE
+    assert "QQQ" in BASE_UNIVERSE
+
+
+def test_scanner_instantiation():
+    from nexus.scanner import UniverseScanner
+
+    scanner = UniverseScanner(max_tickers=10)
+    assert scanner._max_tickers == 10
+
+
+# ── Config Tests ────────────────────────────────────────────────────────────
+
+
+def test_options_config_leaps():
+    from nexus.config import OptionsConfig
+
+    cfg = OptionsConfig()
+    assert cfg.max_dte == 730  # supports LEAPS
+    assert cfg.auto_dte is True
+    assert cfg.use_irongrid_exits is True
+
+
+def test_scanner_config():
+    from nexus.config import ScannerConfig
+
+    cfg = ScannerConfig()
+    assert cfg.enabled is False
+    assert cfg.max_tickers == 20
+
+
+def test_nexus_config_has_scanner():
+    from nexus.config import NEXUSConfig
+
+    cfg = NEXUSConfig()
+    assert hasattr(cfg, "scanner")
+    assert cfg.scanner.enabled is False
