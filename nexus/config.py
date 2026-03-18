@@ -132,10 +132,11 @@ class OptionsConfig:
     enabled: bool = field(
         default_factory=lambda: os.getenv("NEXUS_OPTIONS_ENABLED", "false").lower() == "true"
     )
-    min_dte: int = 21  # minimum days to expiration
+    min_dte: int = 0  # minimum days to expiration (0 = allow 0DTE)
     max_dte: int = 45  # maximum days to expiration
-    target_dte: int = 30  # preferred DTE
+    target_dte: int = 0  # preferred DTE (0 = same-day/0DTE)
     strike_offset: int = 1  # 0=ATM, 1=1 strike OTM, 2=2 strikes OTM
+    max_premium: float = 0.0  # max premium per contract (0 = no limit)
     max_premium_pct: float = 0.02  # max 2% of portfolio per option trade
     min_open_interest: int = 100
     min_volume: int = 10

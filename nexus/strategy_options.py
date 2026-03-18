@@ -142,6 +142,10 @@ async def convert_signal_to_option(
     if premium_per_contract <= 0:
         return None
 
+    if cfg.max_premium > 0 and quote.ask > cfg.max_premium:
+        log.debug("Premium too high", ticker=ticker, ask=f"${quote.ask:.2f}", max=f"${cfg.max_premium:.2f}")
+        return None
+
     max_spend = portfolio_value * cfg.max_premium_pct
     contracts = max(1, int(max_spend / premium_per_contract))
 

@@ -127,6 +127,89 @@ def create_app(engine: NEXUSEngine) -> FastAPI:
             log.warning("Option chain fetch failed", ticker=ticker, error=str(e))
             return {"ticker": ticker.upper(), "error": str(e)}
 
+    # ── Close position ────────────────────────────────────────────────────
+
+    @app.post("/api/close-position")
+    async def close_position(body: dict | None = None):
+        """Close a position by ticker (and optional option_code)."""
+        try:
+            if not body:
+                return {"error": "Missing request body"}
+
+            ticker = body.get("ticker", "").upper()
+            option_code = body.get("option_code", "")
+            if not ticker:
+                return {"error": "ticker is required"}
+
+            # Find matching open trade in tracker
+            trades = engine.tracker.get_open_trades()
+            trade = None
+            for t in trades:
+                if t["ticker"] == ticker:
+                    if option_code and t.get("option_code") == option_code:
+                        trade = t
+                        break
+                    if not option_code and t.get("instrument_type", "EQUITY") == "EQUITY":
+                        trade = t
+                        break
+            # Fallback: match any trade for this ticker
+            if not trade:
+                trade = next((t for t in trades if t["ticker"] == ticker), None)
+
+            inst_type = trade.get("instrument_type", "EQUITY") if trade else "EQUITY"
+            trade_id = trade["id"] if trade else None
+
+            if inst_type in ("CALL", "PUT") and trade:
+                from nexus.broker import OptionsContract, OrderSide, OrderType
+
+                contract = OptionsContract(
+                    ticker=ticker,
+                    strike=trade.get("option_strike", 0),
+                    expiration=trade.get("option_expiration", ""),
+                    right=inst_type,
+                    code=trade.get("option_code", ""),
+                )
+                quote = await engine.broker.get_quote(contract.code) if contract.code else None
+                exit_price = quote.last if quote else trade["entry_price"]
+                await engine.broker.place_options_order(
+                    contract=contract,
+                    side=OrderSide.SELL,
+                    qty=int(trade["shares"]),
+                    order_type=OrderType.MARKET,
+                )
+            else:
+                from nexus.broker import OrderSide, OrderType
+
+                # Close equity position directly at broker
+                side = trade.get("side", "LONG") if trade else "LONG"
+                # Get shares from broker position if no tracker trade
+                pos_list = await engine.broker.get_positions()
+                pos = next((p for p in pos_list if p.ticker == ticker), None)
+                shares = pos.shares if pos else (trade["shares"] if trade else 0)
+                if shares <= 0:
+                    return {"error": f"No position found for {ticker}"}
+
+                if side == "SHORT" or (pos and pos.side == "SHORT"):
+                    await engine.broker.close_short(ticker, shares)
+                else:
+                    await engine.broker.place_order(
+                        ticker=ticker,
+                        side=OrderSide.SELL,
+                        qty=shares,
+                        order_type=OrderType.MARKET,
+                    )
+                quote = await engine.broker.get_quote(ticker)
+                exit_price = quote.last if quote else (trade["entry_price"] if trade else 0)
+
+            pnl = None
+            if trade_id:
+                pnl = engine.tracker.close_trade(trade_id, exit_price, "manual_close")
+
+            return {"success": True, "ticker": ticker, "pnl": pnl, "exit_price": exit_price}
+        except Exception as e:
+            log.warning("Close position failed", ticker=body.get("ticker", "?"), error=str(e))
+            return {"error": str(e)}
+
     # ── WebSocket ────────────────────────────────────────────────────────────
 
     @app.websocket("/ws/events")

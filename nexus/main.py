@@ -158,6 +158,18 @@ def backtest(tickers, years, capital, output, log_level):
     default=False,
     help="Enable options trading (buy calls/puts instead of shares)",
 )
+@click.option(
+    "--target-dte",
+    default=0,
+    show_default=True,
+    help="Target days to expiration for options (0 = same-day/0DTE)",
+)
+@click.option(
+    "--max-premium",
+    default=0.0,
+    show_default=True,
+    help="Max premium per contract (0 = no limit)",
+)
 def run(
     paper,
     broker_name,
@@ -172,6 +184,8 @@ def run(
     web_port,
     flatten_on_exit,
     use_options,
+    target_dte,
+    max_premium,
 ):
     """Start the live long/short trading engine with Rich dashboard."""
     from nexus.logger import setup_logging
@@ -192,6 +206,10 @@ def run(
         cfg.watchlist = list(tickers)
     if use_options:
         cfg.options.enabled = True
+        cfg.options.target_dte = target_dte
+        cfg.options.min_dte = 0 if target_dte == 0 else max(target_dte - 7, 0)
+        if max_premium > 0:
+            cfg.options.max_premium = max_premium
 
     try:
         cfg.validate()
@@ -231,7 +249,9 @@ def run(
     click.echo(f"Starting NEXUS v3 [{mode}] — broker: {broker_name.upper()} — {trade_mode}")
     click.echo(f"Watchlist: {', '.join(cfg.watchlist)}")
     if use_options:
-        click.echo(f"Options: target DTE={cfg.options.target_dte}, max premium={cfg.options.max_premium_pct:.0%}")
+        dte_label = "0DTE (same-day)" if cfg.options.target_dte == 0 else f"{cfg.options.target_dte}d"
+        prem_label = f", max premium=${cfg.options.max_premium:.2f}" if cfg.options.max_premium > 0 else ""
+        click.echo(f"Options: target DTE={dte_label}{prem_label}")
     click.echo(f"Scan interval: {scan_interval}s  |  Press Ctrl+C to stop\n")
 
     async def _run():

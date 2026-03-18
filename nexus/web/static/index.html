@@ -36,6 +36,7 @@
             <div class="flex items-center gap-4">
                 <h1 class="text-xl font-bold tracking-wider" style="color:var(--nexus-gold)">NEXUS</h1>
                 <span class="badge" :class="status.paper ? 'badge-paper' : 'badge-live'" x-text="status.paper ? 'PAPER' : 'LIVE'"></span>
+                <span x-show="status.options_enabled" class="px-2 py-0.5 text-[10px] rounded bg-purple-500/20 text-purple-400 border border-purple-500/30">OPTIONS</span>
                 <span class="text-xs text-nexus-dim font-mono" x-text="(status.broker||'').toUpperCase()"></span>
             </div>
             <div class="flex items-center gap-8 font-mono text-sm">
@@ -96,9 +97,21 @@
                 <div class="col-span-5 card">
                     <div class="card-header flex items-center justify-between"><span>Open Positions</span><span class="text-nexus-mid text-xs font-mono" x-text="positions.length+' active'"></span></div>
                     <div x-show="positions.length>0" class="overflow-auto" style="max-height:320px">
-                        <table class="data-table font-mono"><thead><tr><th>Ticker</th><th>Side</th><th class="text-right">Qty</th><th class="text-right">Entry</th><th class="text-right">Last</th><th class="text-right">Mkt Val</th><th class="text-right">P&L</th><th class="text-right">P&L %</th></tr></thead>
-                        <tbody><template x-for="p in positions" :key="p.ticker"><tr>
-                            <td class="font-semibold" x-text="p.ticker"></td>
+                        <table class="data-table font-mono"><thead><tr><th>Ticker</th><th>Contract</th><th>Side</th><th class="text-right">Qty</th><th class="text-right">Entry</th><th class="text-right">Last</th><th class="text-right">Mkt Val</th><th class="text-right">P&L</th><th class="text-right">P&L %</th><th></th></tr></thead>
+                        <tbody><template x-for="p in positions" :key="p.ticker+(p.option_code||'')"><tr>
+                            <td class="font-semibold">
+                                <span x-text="p.ticker"></span>
+                                <span x-show="p.instrument_type === 'CALL'" class="ml-1 px-1.5 py-0.5 text-[10px] rounded bg-green-500/20 text-green-400">CALL</span>
+                                <span x-show="p.instrument_type === 'PUT'" class="ml-1 px-1.5 py-0.5 text-[10px] rounded bg-red-500/20 text-red-400">PUT</span>
+                            </td>
+                            <td class="px-3 py-2 text-xs text-slate-400">
+                                <template x-if="p.instrument_type && p.instrument_type !== 'EQUITY'">
+                                    <span>
+                                        <span x-text="p.strike + (p.instrument_type === 'CALL' ? 'C' : 'P')"></span>
+                                        <span x-text="p.expiration ? p.expiration.substring(5) : ''"></span>
+                                    </span>
+                                </template>
+                            </td>
                             <td><span class="badge" :class="(p.side||'LONG')==='LONG'?'badge-long':'badge-short'" x-text="p.side||'LONG'"></span></td>
                             <td class="text-right" x-text="p.shares"></td>
                             <td class="text-right" x-text="'$'+Number(p.avg_cost).toFixed(2)"></td>
@@ -106,6 +119,7 @@
                             <td class="text-right" x-text="fmtMoneyOrZero(p.market_value)"></td>
                             <td class="text-right" :style="pnlColor(p.unrealized_pnl)" x-text="fmtPnl(p.unrealized_pnl)"></td>
                             <td class="text-right" :style="pnlColor(p.unrealized_pnl_pct)" x-text="fmtPct(p.unrealized_pnl_pct)"></td>
+                            <td class="text-right"><button @click="closePosition(p.ticker, p.option_code)" class="px-2 py-1 text-[10px] rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30 transition-colors">Close</button></td>
                         </tr></template></tbody></table>
                     </div>
                     <div x-show="positions.length===0" class="empty-state">
@@ -179,10 +193,15 @@
             <div class="card">
                 <div class="card-header flex items-center justify-between"><span>Recent Closed Trades</span><span class="text-nexus-mid text-xs font-mono" x-text="closedTrades.length+' total closed'"></span></div>
                 <div x-show="closedTrades.length>0" class="overflow-auto">
-                    <table class="data-table font-mono"><thead><tr><th>Time</th><th>Ticker</th><th>Side</th><th class="text-right">Qty</th><th class="text-right">Entry</th><th class="text-right">Exit</th><th class="text-right">P&L</th><th>Reason</th><th>Strategy</th></tr></thead>
+                    <table class="data-table font-mono"><thead><tr><th>Time</th><th>Ticker</th><th>Contract</th><th>Side</th><th class="text-right">Qty</th><th class="text-right">Entry</th><th class="text-right">Exit</th><th class="text-right">P&L</th><th>Reason</th><th>Strategy</th></tr></thead>
                     <tbody><template x-for="t in recentClosed" :key="t.id"><tr>
                         <td class="text-nexus-dim" x-text="fmtDate(t.closed_at)"></td>
-                        <td class="font-semibold" x-text="t.ticker"></td>
+                        <td class="font-semibold">
+                            <span x-text="t.ticker"></span>
+                            <span x-show="t.instrument_type === 'CALL'" class="ml-1 px-1.5 py-0.5 text-[10px] rounded bg-green-500/20 text-green-400">CALL</span>
+                            <span x-show="t.instrument_type === 'PUT'" class="ml-1 px-1.5 py-0.5 text-[10px] rounded bg-red-500/20 text-red-400">PUT</span>
+                        </td>
+                        <td class="px-3 py-2 text-xs text-slate-400" x-text="fmtContract(t)"></td>
                         <td><span class="badge" :class="(t.side||'LONG')==='LONG'?'badge-long':'badge-short'" x-text="t.side||'LONG'"></span></td>
                         <td class="text-right" x-text="t.shares"></td>
                         <td class="text-right" x-text="'$'+Number(t.entry_price).toFixed(2)"></td>
@@ -250,13 +269,18 @@
             <div class="card">
                 <div x-show="filteredTrades.length>0" class="overflow-auto">
                     <table class="data-table font-mono"><thead><tr>
-                        <th>Opened</th><th>Ticker</th><th>Side</th><th class="text-right">Qty</th><th class="text-right">Entry</th><th class="text-right">Stop</th><th class="text-right">Target</th>
+                        <th>Opened</th><th>Ticker</th><th>Contract</th><th>Side</th><th class="text-right">Qty</th><th class="text-right">Entry</th><th class="text-right">Stop</th><th class="text-right">Target</th>
                         <th class="text-right" x-show="tradeFilter==='closed'">Exit</th><th class="text-right" x-show="tradeFilter==='closed'">P&L</th><th x-show="tradeFilter==='closed'">Reason</th>
                         <th>Strategy</th><th class="text-right">Score</th>
                     </tr></thead>
                     <tbody><template x-for="t in pagedTrades" :key="t.id"><tr>
                         <td class="text-nexus-dim" x-text="fmtDate(t.opened_at)"></td>
-                        <td class="font-semibold" x-text="t.ticker"></td>
+                        <td class="font-semibold">
+                            <span x-text="t.ticker"></span>
+                            <span x-show="t.instrument_type === 'CALL'" class="ml-1 px-1.5 py-0.5 text-[10px] rounded bg-green-500/20 text-green-400">CALL</span>
+                            <span x-show="t.instrument_type === 'PUT'" class="ml-1 px-1.5 py-0.5 text-[10px] rounded bg-red-500/20 text-red-400">PUT</span>
+                        </td>
+                        <td class="px-3 py-2 text-xs text-slate-400" x-text="fmtContract(t)"></td>
                         <td><span class="badge" :class="(t.side||'LONG')==='LONG'?'badge-long':'badge-short'" x-text="t.side||'LONG'"></span></td>
                         <td class="text-right" x-text="t.shares"></td>
                         <td class="text-right" x-text="'$'+Number(t.entry_price).toFixed(2)"></td>

@@ -96,6 +96,36 @@ document.addEventListener("alpine:init", () => {
       if (this.activityFeed.length > 50) this.activityFeed.length = 50;
     },
 
+    async closePosition(ticker, optionCode) {
+      if (!confirm('Close this position?')) return;
+      try {
+        const body = { ticker };
+        if (optionCode) body.option_code = optionCode;
+        const resp = await fetch('/api/close-position', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await resp.json();
+        if (data.success) {
+          this.addActivity('CLOSE', `Closing ${ticker}${optionCode ? ' ' + optionCode : ''}`, 'amber');
+          this.fetchAll();
+        } else {
+          alert('Failed to close: ' + (data.error || 'Unknown error'));
+        }
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    },
+
+    fmtContract(trade) {
+      if (!trade.instrument_type || trade.instrument_type === 'EQUITY') return '';
+      const right = trade.instrument_type === 'CALL' ? 'C' : 'P';
+      const strike = trade.option_strike || trade.strike || 0;
+      const exp = (trade.option_expiration || trade.expiration || '').substring(5);
+      return `${strike}${right} ${exp}`;
+    },
+
     switchView(v) {
       this.view = v;
       if (v === "performance") this.$nextTick(() => { this.renderPnlChart(); this.renderDailyChart(); });

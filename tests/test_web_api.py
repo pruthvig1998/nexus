@@ -339,7 +339,7 @@ def test_options_config():
 
     cfg = NEXUSConfig()
     assert cfg.options.enabled is False
-    assert cfg.options.target_dte == 30
+    assert cfg.options.target_dte == 0  # default: 0DTE
     assert cfg.options.min_signal_score == 0.70
 
 

@@ -845,9 +845,8 @@ class NEXUSEngine:
                     right=trade.get("instrument_type", "CALL"),
                     code=opt_code,
                 )
-                # Use batch quotes with the option code for current price
-                quotes = await self._broker.get_batch_quotes([opt_code])
-                quote = quotes.get(opt_code)
+                # Get current option price
+                quote = await self._broker.get_quote(opt_code)
                 if not quote:
                     continue
 
