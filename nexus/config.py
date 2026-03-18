@@ -128,6 +128,24 @@ class TelegramConfig:
 
 
 @dataclass
+class OptionsConfig:
+    enabled: bool = field(
+        default_factory=lambda: os.getenv("NEXUS_OPTIONS_ENABLED", "false").lower() == "true"
+    )
+    min_dte: int = 21  # minimum days to expiration
+    max_dte: int = 45  # maximum days to expiration
+    target_dte: int = 30  # preferred DTE
+    strike_offset: int = 1  # 0=ATM, 1=1 strike OTM, 2=2 strikes OTM
+    max_premium_pct: float = 0.02  # max 2% of portfolio per option trade
+    min_open_interest: int = 100
+    min_volume: int = 10
+    min_signal_score: float = 0.70  # higher threshold for options (leveraged)
+    profit_target_pct: float = 0.50  # take profit at 50% gain
+    stop_loss_pct: float = 0.50  # stop at 50% loss
+    min_dte_exit: int = 7  # close if < 7 DTE remaining
+
+
+@dataclass
 class NEXUSConfig:
     active_broker: str = "alpaca"
     watchlist: List[str] = field(
@@ -155,6 +173,7 @@ class NEXUSConfig:
     discord: DiscordConfig = field(default_factory=DiscordConfig)
     twitter: TwitterConfig = field(default_factory=TwitterConfig)
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
+    options: OptionsConfig = field(default_factory=OptionsConfig)
     db_path: str = "nexus.db"
     log_level: str = "INFO"
 

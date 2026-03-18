@@ -23,6 +23,7 @@ import pandas as pd
 from nexus.broker import (
     AlpacaBroker,
     BaseBroker,
+    OptionsContract,
     OrderSide,
     OrderStatus,
     OrderType,
@@ -392,6 +393,20 @@ class NEXUSEngine:
             if market_open:
                 for sig in best.values():
                     if sig.score >= self._cfg.strategy.min_signal_score:
+                        # Convert to options signal if options enabled
+                        if self._cfg.options.enabled and sig.instrument_type == "EQUITY":
+                            from nexus.strategy_options import convert_signal_to_option
+
+                            try:
+                                acct = await self._broker.get_account_info()
+                                opt_sig = await convert_signal_to_option(
+                                    sig, self._broker, acct.portfolio_value
+                                )
+                                if opt_sig:
+                                    await self._execute_options(opt_sig)
+                                    continue
+                            except Exception as e:
+                                log.debug("Options conversion failed", ticker=sig.ticker, error=str(e))
                         await self._execute(sig)
 
         if self._broker.is_connected:
@@ -600,6 +615,84 @@ class NEXUSEngine:
         except Exception as e:
             log.error("Execute failed", ticker=signal.ticker, error=str(e))
 
+    # ── Options execution ──────────────────────────────────────────────────────
+
+    async def _execute_options(self, signal: Signal) -> None:
+        """Execute an options signal — buy calls or puts."""
+        try:
+            contract = OptionsContract(
+                ticker=signal.ticker,
+                strike=signal.option_strike,
+                expiration=signal.option_expiration,
+                right=signal.instrument_type,
+                code=signal.option_code,
+            )
+            qty = signal.contracts
+            if qty < 1:
+                return
+
+            self._tracker.log_signal(
+                ticker=signal.ticker,
+                strategy=signal.strategy,
+                score=signal.score,
+                direction=f"BUY_{signal.instrument_type}",
+                reasoning=signal.reasoning,
+            )
+
+            result = await self._broker.place_options_order(
+                contract=contract,
+                side=OrderSide.BUY,
+                qty=qty,
+                order_type=OrderType.LIMIT,
+                limit_price=signal.limit_price or signal.entry_price,
+            )
+
+            if result.status == OrderStatus.REJECTED:
+                log.warning(
+                    "Options order rejected",
+                    ticker=signal.ticker,
+                    right=signal.instrument_type,
+                    msg=result.message,
+                )
+                return
+
+            trade_id = self._tracker.open_trade(
+                broker=self._broker.name,
+                ticker=signal.ticker,
+                side="LONG",
+                shares=float(qty),
+                entry_price=result.avg_fill_price or signal.entry_price,
+                stop_price=signal.stop_price,
+                target_price=signal.target_price,
+                strategy=signal.strategy,
+                signal_score=signal.score,
+                paper=self._cfg.paper,
+                instrument_type=signal.instrument_type,
+                option_strike=signal.option_strike,
+                option_expiration=signal.option_expiration,
+                option_code=signal.option_code,
+            )
+            self._pending[result.order_id] = _PendingOrder(
+                order_id=result.order_id,
+                trade_id=trade_id,
+                ticker=signal.ticker,
+                shares=float(qty),
+                side=signal.instrument_type,  # "CALL" or "PUT"
+            )
+            await self._bus.publish(EventType.ORDER_SUBMITTED, result)
+            log.info(
+                "Options order submitted",
+                ticker=signal.ticker,
+                type=signal.instrument_type,
+                strike=signal.option_strike,
+                exp=signal.option_expiration,
+                contracts=qty,
+                premium=f"${signal.entry_price:.2f}",
+                strategy=signal.strategy,
+            )
+        except Exception as e:
+            log.error("Options execute failed", ticker=signal.ticker, error=str(e))
+
     # ── Fill polling ──────────────────────────────────────────────────────────
 
     async def _poll_fills(self) -> None:
@@ -653,10 +746,20 @@ class NEXUSEngine:
         open_trades = self._tracker.get_open_trades(broker=self._broker.name)
         if not open_trades:
             return
-        tickers = list({t["ticker"] for t in open_trades})
+
+        # Separate options and equity trades
+        equity_trades = [t for t in open_trades if t.get("instrument_type", "EQUITY") == "EQUITY"]
+        option_trades = [t for t in open_trades if t.get("instrument_type", "EQUITY") in ("CALL", "PUT")]
+
+        if option_trades:
+            await self._check_options_exits(option_trades)
+
+        tickers = list({t["ticker"] for t in equity_trades})
+        if not tickers:
+            return
         quotes = await self._broker.get_batch_quotes(tickers)
 
-        for trade in open_trades:
+        for trade in equity_trades:
             quote = quotes.get(trade["ticker"])
             if not quote:
                 continue
@@ -718,3 +821,89 @@ class NEXUSEngine:
                     pnl=f"${pnl:+.2f}" if pnl else "?",
                     reason=reason,
                 )
+
+    async def _check_options_exits(self, trades: List[dict]) -> None:
+        """Check options trades for exit conditions (P&L targets, time decay)."""
+        from datetime import datetime as _dt
+
+        opts_cfg = self._cfg.options
+        today = _dt.now().date()
+
+        for trade in trades:
+            opt_code = trade.get("option_code", "")
+            if not opt_code:
+                continue
+
+            # Get current option price via quote
+            try:
+                from nexus.broker import OptionsContract
+
+                contract = OptionsContract(
+                    ticker=trade["ticker"],
+                    strike=trade.get("option_strike", 0),
+                    expiration=trade.get("option_expiration", ""),
+                    right=trade.get("instrument_type", "CALL"),
+                    code=opt_code,
+                )
+                # Use batch quotes with the option code for current price
+                quotes = await self._broker.get_batch_quotes([opt_code])
+                quote = quotes.get(opt_code)
+                if not quote:
+                    continue
+
+                current_price = quote.last
+                entry_price = trade["entry_price"]
+                if entry_price <= 0:
+                    continue
+
+                pnl_pct = (current_price - entry_price) / entry_price
+
+                # Check DTE
+                reason = None
+                exp_str = trade.get("option_expiration", "")
+                if exp_str:
+                    try:
+                        exp_date = _dt.strptime(exp_str[:10], "%Y-%m-%d").date()
+                        dte = (exp_date - today).days
+                        if dte <= opts_cfg.min_dte_exit:
+                            reason = f"dte_exit ({dte}d remaining)"
+                    except ValueError:
+                        pass
+
+                # Check profit target
+                if pnl_pct >= opts_cfg.profit_target_pct:
+                    reason = f"profit_target ({pnl_pct:.0%})"
+
+                # Check stop loss
+                if pnl_pct <= -opts_cfg.stop_loss_pct:
+                    reason = f"stop_loss ({pnl_pct:.0%})"
+
+                if reason:
+                    # Sell the option
+                    await self._broker.place_options_order(
+                        contract=contract,
+                        side=OrderSide.SELL,
+                        qty=int(trade["shares"]),
+                        order_type=OrderType.LIMIT,
+                        limit_price=round(current_price * 0.98, 2),
+                    )
+                    pnl = self._tracker.close_trade(trade["id"], current_price, reason)
+                    await self._bus.publish(
+                        EventType.POSITION_CLOSED,
+                        {
+                            "trade_id": trade["id"],
+                            "ticker": trade["ticker"],
+                            "side": trade.get("instrument_type", "CALL"),
+                            "pnl": pnl,
+                            "reason": reason,
+                        },
+                    )
+                    log.info(
+                        "Options position closed",
+                        ticker=trade["ticker"],
+                        type=trade.get("instrument_type"),
+                        pnl=f"${pnl:+.2f}" if pnl else "?",
+                        reason=reason,
+                    )
+            except Exception as e:
+                log.error("Options exit check failed", ticker=trade["ticker"], error=str(e))

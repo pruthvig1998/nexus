@@ -34,6 +34,10 @@ class FakeEventBus:
                 await result
 
 
+class _FakeOptionsConfig:
+    enabled = False
+
+
 class FakeConfig:
     """Minimal config for engine mock."""
 
@@ -43,6 +47,7 @@ class FakeConfig:
     scan_interval = 60
     log_level = "WARNING"
     db_path = ":memory:"
+    options = _FakeOptionsConfig()
 
 
 class FakeEngine:
@@ -276,6 +281,134 @@ async def test_get_status(client, engine):
     assert data["paper"] is True
     assert data["broker"] == "alpaca"
     assert "AAPL" in data["watchlist"]
+    assert data["options_enabled"] is False
+
+
+async def test_get_option_chain_expirations(client, engine):
+    engine.broker.get_option_expirations = AsyncMock(return_value=["2025-04-17", "2025-05-16"])
+    resp = await client.get("/api/option-chain/AAPL")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["ticker"] == "AAPL"
+    assert len(data["expirations"]) == 2
+
+
+# ── Options Data Model Tests ─────────────────────────────────────────────────
+
+
+def test_options_contract():
+    from nexus.broker import OptionsContract
+
+    c = OptionsContract(ticker="AAPL", strike=150.0, expiration="2025-04-17", right="CALL")
+    assert c.ticker == "AAPL"
+    assert c.right == "CALL"
+
+
+def test_position_option_pnl():
+    from nexus.broker import Position
+
+    pos = Position(
+        ticker="AAPL",
+        shares=5,
+        avg_cost=3.50,
+        current_price=5.00,
+        broker="moomoo",
+        side="LONG",
+        instrument_type="CALL",
+        strike=150.0,
+        expiration="2025-04-17",
+    )
+    assert pos.is_option is True
+    assert pos.market_value == 5 * 5.00 * 100  # 2500
+    assert pos.unrealized_pnl == (5.00 - 3.50) * 5 * 100  # 750
+
+
+def test_position_equity_unchanged():
+    from nexus.broker import Position
+
+    pos = Position(
+        ticker="AAPL", shares=100, avg_cost=150.0, current_price=155.0, broker="alpaca"
+    )
+    assert pos.is_option is False
+    assert pos.market_value == 15500.0
+    assert pos.unrealized_pnl == 500.0
+
+
+def test_options_config():
+    from nexus.config import NEXUSConfig
+
+    cfg = NEXUSConfig()
+    assert cfg.options.enabled is False
+    assert cfg.options.target_dte == 30
+    assert cfg.options.min_signal_score == 0.70
+
+
+def test_signal_options_fields():
+    from nexus.strategy import Signal
+
+    sig = Signal(
+        ticker="AAPL",
+        direction="BUY",
+        score=0.85,
+        strategy="options_momentum",
+        reasoning="Strong RSI",
+        instrument_type="CALL",
+        option_strike=150.0,
+        option_expiration="2025-04-17",
+        option_code="US.AAPL250417C00150000",
+        contracts=3,
+    )
+    assert sig.instrument_type == "CALL"
+    assert sig.contracts == 3
+    assert sig.option_code == "US.AAPL250417C00150000"
+
+
+def test_tracker_options_trade():
+    from nexus.tracker import PortfolioTracker
+
+    t = PortfolioTracker(":memory:")
+    tid = t.open_trade(
+        broker="moomoo",
+        ticker="AAPL",
+        side="LONG",
+        shares=5,
+        entry_price=3.50,
+        stop_price=1.75,
+        target_price=5.25,
+        strategy="options_momentum",
+        signal_score=0.85,
+        paper=True,
+        instrument_type="CALL",
+        option_strike=150.0,
+        option_expiration="2025-04-17",
+        option_code="US.AAPL250417C00150000",
+    )
+    trades = t.get_open_trades()
+    assert len(trades) == 1
+    assert trades[0]["instrument_type"] == "CALL"
+    assert trades[0]["option_strike"] == 150.0
+
+    pnl = t.close_trade(tid, 5.25, "profit_target")
+    # CALL P&L: (5.25 - 3.50) * 5 * 100 = 875
+    assert pnl == 875.0
+
+
+def test_select_expiration():
+    from datetime import datetime, timedelta
+
+    from nexus.config import OptionsConfig
+    from nexus.strategy_options import select_expiration
+
+    cfg = OptionsConfig(min_dte=21, max_dte=45, target_dte=30)
+    today = datetime.now().date()
+    # Generate future expirations relative to today
+    exp1 = (today + timedelta(days=10)).isoformat()  # too soon
+    exp2 = (today + timedelta(days=28)).isoformat()  # in range, close to target
+    exp3 = (today + timedelta(days=60)).isoformat()  # too far
+    exp4 = (today + timedelta(days=35)).isoformat()  # in range
+    result = select_expiration([exp1, exp2, exp3, exp4], cfg)
+    assert result is not None
+    assert result == exp2  # closest to target_dte=30
 
 
 # ── WebSocket Tests ──────────────────────────────────────────────────────────

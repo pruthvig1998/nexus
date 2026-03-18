@@ -28,7 +28,11 @@ CREATE TABLE IF NOT EXISTS trades (
     strategy TEXT, signal_score REAL,
     pnl REAL, exit_reason TEXT,
     opened_at TEXT, closed_at TEXT,
-    paper INTEGER
+    paper INTEGER,
+    instrument_type TEXT DEFAULT 'EQUITY',
+    option_strike REAL DEFAULT 0,
+    option_expiration TEXT DEFAULT '',
+    option_code TEXT DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS daily_pnl (
     date TEXT PRIMARY KEY, pnl REAL, trades INTEGER
@@ -56,6 +60,14 @@ class PortfolioTracker:
             self._persistent_conn.execute("PRAGMA journal_mode=WAL")
             self._persistent_conn.row_factory = sqlite3.Row
             self._persistent_conn.executescript(SCHEMA)
+            # Migrate: add options columns if missing
+            try:
+                self._persistent_conn.execute("SELECT instrument_type FROM trades LIMIT 1")
+            except sqlite3.OperationalError:
+                self._persistent_conn.execute("ALTER TABLE trades ADD COLUMN instrument_type TEXT DEFAULT 'EQUITY'")
+                self._persistent_conn.execute("ALTER TABLE trades ADD COLUMN option_strike REAL DEFAULT 0")
+                self._persistent_conn.execute("ALTER TABLE trades ADD COLUMN option_expiration TEXT DEFAULT ''")
+                self._persistent_conn.execute("ALTER TABLE trades ADD COLUMN option_code TEXT DEFAULT ''")
             self._persistent_conn.commit()
         else:
             self._persistent_conn = None
@@ -64,6 +76,15 @@ class PortfolioTracker:
     def _init_db(self) -> None:
         with self._conn() as conn:
             conn.executescript(SCHEMA)
+            # Migrate: add options columns if missing
+            try:
+                conn.execute("SELECT instrument_type FROM trades LIMIT 1")
+            except sqlite3.OperationalError:
+                conn.execute("ALTER TABLE trades ADD COLUMN instrument_type TEXT DEFAULT 'EQUITY'")
+                conn.execute("ALTER TABLE trades ADD COLUMN option_strike REAL DEFAULT 0")
+                conn.execute("ALTER TABLE trades ADD COLUMN option_expiration TEXT DEFAULT ''")
+                conn.execute("ALTER TABLE trades ADD COLUMN option_code TEXT DEFAULT ''")
+                conn.commit()
 
     @contextmanager
     def _conn(self):
@@ -102,6 +123,10 @@ class PortfolioTracker:
         strategy: str,
         signal_score: float,
         paper: bool = True,
+        instrument_type: str = "EQUITY",
+        option_strike: float = 0.0,
+        option_expiration: str = "",
+        option_code: str = "",
     ) -> str:
         """Open a new trade. side should be "LONG" or "SHORT"."""
         trade_id = str(uuid.uuid4())
@@ -109,8 +134,9 @@ class PortfolioTracker:
             conn.execute(
                 """INSERT INTO trades
                    (id,broker,ticker,side,shares,entry_price,stop_price,
-                    target_price,strategy,signal_score,opened_at,paper)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    target_price,strategy,signal_score,opened_at,paper,
+                    instrument_type,option_strike,option_expiration,option_code)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     trade_id,
                     broker,
@@ -124,6 +150,10 @@ class PortfolioTracker:
                     signal_score,
                     datetime.now(timezone.utc).isoformat(),
                     int(paper),
+                    instrument_type,
+                    option_strike,
+                    option_expiration,
+                    option_code,
                 ),
             )
         log.info(
@@ -146,10 +176,12 @@ class PortfolioTracker:
                 return None
             trade = dict(row)
             side = trade.get("side", "LONG")
+            inst_type = trade.get("instrument_type", "EQUITY")
+            multiplier = 100 if inst_type in ("CALL", "PUT") else 1
             if side == "SHORT":
-                pnl = (trade["entry_price"] - exit_price) * trade["shares"]
+                pnl = (trade["entry_price"] - exit_price) * trade["shares"] * multiplier
             else:
-                pnl = (exit_price - trade["entry_price"]) * trade["shares"]
+                pnl = (exit_price - trade["entry_price"]) * trade["shares"] * multiplier
             conn.execute(
                 "UPDATE trades SET exit_price=?,pnl=?,exit_reason=?,closed_at=? WHERE id=?",
                 (exit_price, pnl, exit_reason, datetime.now(timezone.utc).isoformat(), trade_id),

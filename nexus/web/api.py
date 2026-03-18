@@ -105,7 +105,27 @@ def create_app(engine: NEXUSEngine) -> FastAPI:
             "broker": engine._cfg.active_broker,
             "watchlist": engine._cfg.watchlist,
             "ws_clients": ws_manager.client_count,
+            "options_enabled": engine._cfg.options.enabled,
         }
+
+    @app.get("/api/option-chain/{ticker}")
+    async def get_option_chain(ticker: str, expiration: str = Query(default="")):
+        """Get option chain for a ticker. If no expiration, return expirations list."""
+        try:
+            if not expiration:
+                expirations = await engine.broker.get_option_expirations(ticker.upper())
+                return {"ticker": ticker.upper(), "expirations": expirations}
+            chain = await engine.broker.get_option_chain(ticker.upper(), expiration)
+            from nexus.web.ws import _serialize
+
+            return {
+                "ticker": ticker.upper(),
+                "expiration": expiration,
+                "chain": [_serialize(q) for q in chain],
+            }
+        except Exception as e:
+            log.warning("Option chain fetch failed", ticker=ticker, error=str(e))
+            return {"ticker": ticker.upper(), "error": str(e)}
 
     # ── WebSocket ────────────────────────────────────────────────────────────
 

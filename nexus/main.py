@@ -151,6 +151,13 @@ def backtest(tickers, years, capital, output, log_level):
     default=False,
     help="Close all positions before shutting down",
 )
+@click.option(
+    "--options",
+    "use_options",
+    is_flag=True,
+    default=False,
+    help="Enable options trading (buy calls/puts instead of shares)",
+)
 def run(
     paper,
     broker_name,
@@ -164,6 +171,7 @@ def run(
     use_web,
     web_port,
     flatten_on_exit,
+    use_options,
 ):
     """Start the live long/short trading engine with Rich dashboard."""
     from nexus.logger import setup_logging
@@ -182,6 +190,8 @@ def run(
     )
     if tickers:
         cfg.watchlist = list(tickers)
+    if use_options:
+        cfg.options.enabled = True
 
     try:
         cfg.validate()
@@ -217,8 +227,11 @@ def run(
 
     broker = _make_broker()
     mode = "PAPER" if paper else "LIVE"
-    click.echo(f"Starting NEXUS v3 [{mode}] — broker: {broker_name.upper()} — Long/Short")
+    trade_mode = "Options (Calls/Puts)" if use_options else "Long/Short"
+    click.echo(f"Starting NEXUS v3 [{mode}] — broker: {broker_name.upper()} — {trade_mode}")
     click.echo(f"Watchlist: {', '.join(cfg.watchlist)}")
+    if use_options:
+        click.echo(f"Options: target DTE={cfg.options.target_dte}, max premium={cfg.options.max_premium_pct:.0%}")
     click.echo(f"Scan interval: {scan_interval}s  |  Press Ctrl+C to stop\n")
 
     async def _run():
