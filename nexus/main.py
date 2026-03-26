@@ -177,6 +177,13 @@ def backtest(tickers, years, capital, output, log_level):
     default=False,
     help="Scan 100+ tickers beyond watchlist for momentum/volume opportunities",
 )
+@click.option(
+    "--swarm",
+    "use_swarm",
+    is_flag=True,
+    default=False,
+    help="Enable multi-agent swarm debate for signal validation (requires ANTHROPIC_API_KEY)",
+)
 def run(
     paper,
     broker_name,
@@ -194,6 +201,7 @@ def run(
     target_dte,
     max_premium,
     use_scanner,
+    use_swarm,
 ):
     """Start the live long/short trading engine with Rich dashboard."""
     from nexus.logger import setup_logging
@@ -222,6 +230,8 @@ def run(
             cfg.options.max_premium = max_premium
     if use_scanner:
         cfg.scanner.enabled = True
+    if use_swarm:
+        cfg.swarm.enabled = True
 
     try:
         cfg.validate()
@@ -269,6 +279,8 @@ def run(
         click.echo(f"Options: DTE={dte_label}{prem_label}{grid_label}")
     if use_scanner:
         click.echo("Universe scanner: ON (scanning 100+ tickers for momentum/volume)")
+    if use_swarm:
+        click.echo(f"Swarm debate: ON (model={cfg.swarm.swarm_model}, max {cfg.swarm.max_debate_calls}/cycle)")
     click.echo(f"Scan interval: {scan_interval}s  |  Press Ctrl+C to stop\n")
 
     async def _run():

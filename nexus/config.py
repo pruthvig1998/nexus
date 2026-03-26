@@ -149,6 +149,20 @@ class OptionsConfig:
 
 
 @dataclass
+class SwarmConfig:
+    enabled: bool = field(
+        default_factory=lambda: os.getenv("NEXUS_SWARM_ENABLED", "false").lower() == "true"
+    )
+    max_debate_calls: int = 3  # max swarm debates per scan cycle
+    min_score_for_debate: float = 0.70  # only debate high-conviction signals
+    consensus_threshold: float = 0.60  # weighted vote fraction required to pass
+    timeout_seconds: float = 10.0  # max wall time per debate
+    swarm_model: str = field(
+        default_factory=lambda: os.getenv("NEXUS_SWARM_MODEL", "claude-sonnet-4-20250514")
+    )
+
+
+@dataclass
 class ScannerConfig:
     enabled: bool = field(
         default_factory=lambda: os.getenv("NEXUS_SCANNER_ENABLED", "false").lower() == "true"
@@ -186,6 +200,7 @@ class NEXUSConfig:
     twitter: TwitterConfig = field(default_factory=TwitterConfig)
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     options: OptionsConfig = field(default_factory=OptionsConfig)
+    swarm: SwarmConfig = field(default_factory=SwarmConfig)
     scanner: ScannerConfig = field(default_factory=ScannerConfig)
     db_path: str = "nexus.db"
     log_level: str = "INFO"

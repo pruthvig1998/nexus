@@ -44,6 +44,15 @@ class _FakeScannerConfig:
     scan_interval = 300
 
 
+class _FakeSwarmConfig:
+    enabled = False
+    max_debate_calls = 3
+    min_score_for_debate = 0.70
+    consensus_threshold = 0.60
+    timeout_seconds = 10.0
+    swarm_model = "claude-sonnet-4-20250514"
+
+
 class FakeConfig:
     """Minimal config for engine mock."""
 
@@ -54,6 +63,7 @@ class FakeConfig:
     log_level = "WARNING"
     db_path = ":memory:"
     options = _FakeOptionsConfig()
+    swarm = _FakeSwarmConfig()
     scanner = _FakeScannerConfig()
 
 
@@ -343,7 +353,8 @@ def test_position_equity_unchanged():
     assert pos.unrealized_pnl == 500.0
 
 
-def test_options_config():
+def test_options_config(monkeypatch):
+    monkeypatch.delenv("NEXUS_OPTIONS_ENABLED", raising=False)
     from nexus.config import NEXUSConfig
 
     cfg = NEXUSConfig()
