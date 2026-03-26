@@ -70,6 +70,8 @@ def create_app(engine: NEXUSEngine) -> FastAPI:
     async def get_positions():
         try:
             positions = await engine.broker.get_positions()
+            if engine._cfg.options.enabled:
+                positions = [p for p in positions if getattr(p, "instrument_type", "EQUITY") != "EQUITY"]
             return [_position_dict(p) for p in positions]
         except Exception as e:
             log.warning("Broker positions fetch failed", error=str(e))
@@ -85,8 +87,12 @@ def create_app(engine: NEXUSEngine) -> FastAPI:
         limit: int = Query(default=100, ge=1, le=500),
     ):
         if status == "open":
-            return engine.tracker.get_open_trades()
-        return engine.tracker.get_closed_trades(limit)
+            trades = engine.tracker.get_open_trades()
+        else:
+            trades = engine.tracker.get_closed_trades(limit)
+        if engine._cfg.options.enabled:
+            trades = [t for t in trades if t.get("instrument_type", "EQUITY") in ("CALL", "PUT")]
+        return trades
 
     @app.get("/api/stats")
     async def get_stats():
@@ -110,6 +116,7 @@ def create_app(engine: NEXUSEngine) -> FastAPI:
             "scanner_tickers": getattr(engine, '_scanner_tickers', []),
             "total_tickers": len(engine._cfg.watchlist) + len(getattr(engine, '_scanner_tickers', [])),
             "vix": getattr(engine, '_vix', 20.0),
+            "swarm_enabled": engine._cfg.swarm.enabled,
         }
 
     @app.get("/api/option-chain/{ticker}")
@@ -139,6 +146,37 @@ def create_app(engine: NEXUSEngine) -> FastAPI:
             "total": len(engine._cfg.watchlist) + len(getattr(engine, '_scanner_tickers', [])),
             "scanner_enabled": engine._cfg.scanner.enabled,
         }
+
+    # ── Swarm Intelligence endpoints ──────────────────────────────────────
+
+    @app.get("/api/swarm-debates")
+    async def get_swarm_debates(limit: int = Query(default=10, ge=1, le=50)):
+        memory = getattr(engine, '_memory', None)
+        if memory:
+            return memory.get_recent_debates(limit)
+        return []
+
+    @app.get("/api/agent-track-record")
+    async def get_agent_track_record():
+        memory = getattr(engine, '_memory', None)
+        if not memory:
+            return {}
+        agents = ["momentum", "contrarian", "macro", "risk_manager", "quant"]
+        return {name: memory.get_agent_track_record(name) for name in agents}
+
+    @app.get("/api/market-narratives")
+    async def get_market_narratives():
+        memory = getattr(engine, '_memory', None)
+        if memory:
+            return memory.get_active_narratives()
+        return []
+
+    @app.get("/api/react-report/{ticker}")
+    async def get_react_report(ticker: str):
+        report = getattr(engine, '_react_reports', {}).get(ticker.upper())
+        if report:
+            return report.to_dict()
+        return {"ticker": ticker.upper(), "error": "No report available"}
 
     @app.get("/api/broker-orders")
     async def get_broker_orders(limit: int = Query(default=50, ge=1, le=200)):

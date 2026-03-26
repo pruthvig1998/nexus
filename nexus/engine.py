@@ -61,6 +61,7 @@ class EventType(Enum):
     SCAN_COMPLETE = auto()
     BROKER_CONNECTED = auto()
     DAILY_HALT = auto()
+    SWARM_DEBATE = auto()
 
 
 class _EventBus:
@@ -165,6 +166,55 @@ class NEXUSEngine:
 
         # External signal queue (e.g. Discord feed)
         self._signal_queue: asyncio.Queue[Signal] = asyncio.Queue()
+
+        # Swarm debate engine (multi-agent consensus)
+        self._swarm = None
+        if self._cfg.swarm.enabled and self._cfg.anthropic_api_key:
+            from nexus.swarm import SwarmDebate
+
+            self._swarm = SwarmDebate(
+                config=self._cfg.swarm,
+                anthropic_api_key=self._cfg.anthropic_api_key,
+            )
+
+        # Market memory (always available — no API cost)
+        self._memory = None
+        if self._cfg.swarm.enabled:
+            from nexus.memory import MarketMemory
+
+            self._memory = MarketMemory(self._cfg.db_path)
+
+        # ReACT analysis reports cache
+        self._react_reports: Dict[str, Any] = {}
+
+        # ReACT analysis agent (runs async after trade execution)
+        self._react_agent = None
+        if self._cfg.swarm.enabled and self._cfg.anthropic_api_key:
+            from nexus.react_agent import ReACTAgent, create_default_tools
+
+            tools = create_default_tools(broker=self._broker, tracker=self._tracker)
+            self._react_agent = ReACTAgent(
+                anthropic_api_key=self._cfg.anthropic_api_key,
+                model=self._cfg.swarm.swarm_model,
+                tools=tools,
+            )
+
+        # LLM news parser (fallback for regex-unmatched headlines)
+        if self._cfg.swarm.enabled and self._cfg.anthropic_api_key:
+            from nexus.news_llm import NewsLLMParser
+
+            llm_parser = NewsLLMParser(
+                anthropic_api_key=self._cfg.anthropic_api_key,
+                model=self._cfg.swarm.swarm_model,
+            )
+            # Attach to the news strategy
+            for s in self._strategies:
+                if hasattr(s, "set_llm_parser"):
+                    s.set_llm_parser(llm_parser)
+                    break
+            self._llm_parser = llm_parser
+        else:
+            self._llm_parser = None
 
     # ── Public interface ──────────────────────────────────────────────────────
 
@@ -439,27 +489,100 @@ class NEXUSEngine:
             except asyncio.QueueEmpty:
                 break
 
+        # ── Swarm debate gate (multi-agent consensus) ────────────────────
+        if self._llm_parser:
+            self._llm_parser.reset_cycle()
+
+        if self._swarm:
+            self._swarm.reset_cycle()
+            debated: Dict[str, Signal] = {}
+            positions_summary = ", ".join(
+                f"{t}: {p.side}" for t, p in self._positions.items()
+            ) or "No open positions"
+            # Build agent track records from memory for adaptive prompts
+            track_records_str = ""
+            if self._memory:
+                try:
+                    agents = ["momentum", "contrarian", "macro", "risk_manager", "quant"]
+                    lines = []
+                    for agent in agents:
+                        rec = self._memory.get_agent_track_record(agent)
+                        if rec["total"] > 0:
+                            lines.append(
+                                f"- {agent}: {rec['total']} trades, "
+                                f"{rec['win_rate']:.0%} win rate, "
+                                f"P&L ${rec['total_pnl']:+.2f}"
+                            )
+                    if lines:
+                        track_records_str = "\n".join(lines)
+                except Exception:
+                    pass
+
+            for ticker, sig in best.items():
+                if sig.score >= self._cfg.swarm.min_score_for_debate and self._swarm.budget_remaining > 0:
+                    result = await self._swarm.debate(
+                        sig, vix=self._vix, positions_summary=positions_summary,
+                        agent_track_records=track_records_str,
+                    )
+                    await self._bus.publish(EventType.SWARM_DEBATE, {
+                        "ticker": ticker,
+                        "consensus": result.consensus_direction,
+                        "score": result.consensus_score,
+                        "vetoed": result.vetoed,
+                        "votes": len(result.votes),
+                        "summary": result.debate_summary,
+                    })
+                    if result.vetoed:
+                        log.info("Signal vetoed by swarm risk manager", ticker=ticker)
+                        continue
+                    if result.consensus_direction != sig.direction:
+                        log.info("Swarm disagrees with signal direction", ticker=ticker,
+                                 signal=sig.direction, consensus=result.consensus_direction)
+                        continue
+                    if result.consensus_score < self._cfg.swarm.consensus_threshold:
+                        log.info("Signal failed swarm consensus", ticker=ticker, score=result.consensus_score)
+                        continue
+                    # Blend original score with consensus
+                    sig.score = round(sig.score * 0.5 + result.consensus_score * 0.5, 4)
+                    sig.reasoning += f" | {result.debate_summary}"
+                    debated[ticker] = sig
+                    # Record debate in market memory
+                    if self._memory and result.votes:
+                        try:
+                            self._memory.record_debate(result)
+                        except Exception as e:
+                            log.debug("Memory record failed", error=str(e))
+                else:
+                    debated[ticker] = sig  # below debate threshold or budget exhausted
+            best = debated
+
         if self._broker.is_connected and not self._risk.is_halted:
             market_open = await self._broker.is_market_open()
             if market_open:
                 for sig in best.values():
                     if sig.score >= self._cfg.strategy.min_signal_score:
-                        # Convert to options signal if options enabled
-                        if self._cfg.options.enabled and sig.instrument_type == "EQUITY":
-                            from nexus.strategy_options import convert_signal_to_option
+                        if self._cfg.options.enabled:
+                            # Options-only mode: convert equity signals to options,
+                            # skip entirely if conversion fails (no equity fallback).
+                            if sig.instrument_type == "EQUITY":
+                                from nexus.strategy_options import convert_signal_to_option
 
-                            try:
-                                acct = await self._broker.get_account_info()
-                                opt_sig = await convert_signal_to_option(
-                                    sig, self._broker, acct.portfolio_value,
-                                    vix=self._vix,
-                                )
-                                if opt_sig:
-                                    await self._execute_options(opt_sig)
-                                    continue
-                            except Exception as e:
-                                log.debug("Options conversion failed", ticker=sig.ticker, error=str(e))
-                        await self._execute(sig)
+                                try:
+                                    acct = await self._broker.get_account_info()
+                                    opt_sig = await convert_signal_to_option(
+                                        sig, self._broker, acct.portfolio_value,
+                                        vix=self._vix,
+                                    )
+                                    if opt_sig:
+                                        await self._execute_options(opt_sig)
+                                    else:
+                                        log.debug("Options conversion returned None, skipping", ticker=sig.ticker)
+                                except Exception as e:
+                                    log.debug("Options conversion failed, skipping", ticker=sig.ticker, error=str(e))
+                            elif sig.instrument_type in ("CALL", "PUT"):
+                                await self._execute_options(sig)
+                        else:
+                            await self._execute(sig)
 
         if self._broker.is_connected:
             await self._check_exits()
@@ -515,6 +638,17 @@ class NEXUSEngine:
             acct = await self._broker.get_account_info()
             positions_list = await self._broker.get_positions()
             existing = self._positions.get(signal.ticker)
+
+            # Guard: skip if there's already a pending order for this ticker
+            # (prevents duplicate orders within the same scan cycle or across
+            # cycles where the prior order hasn't filled yet).
+            pending_side = signal.direction == "BUY" and "LONG" or "SHORT"
+            if any(
+                p.ticker == signal.ticker and p.side in (pending_side, "CLOSE")
+                for p in self._pending.values()
+            ):
+                log.debug("Skipping — pending order exists", ticker=signal.ticker)
+                return
 
             stats = self._tracker.compute_stats()
             shares = size_position(
@@ -655,6 +789,16 @@ class NEXUSEngine:
                 shares=float(final_shares),
                 side=trade_side,
             )
+            # Update position cache so subsequent signals in the same scan
+            # cycle see this ticker as already positioned.
+            self._positions[signal.ticker] = Position(
+                ticker=signal.ticker,
+                shares=float(final_shares),
+                avg_cost=result.avg_fill_price or signal.entry_price,
+                current_price=signal.entry_price,
+                broker=self._broker.name,
+                side=trade_side,
+            )
             await self._bus.publish(EventType.ORDER_SUBMITTED, result)
             log.info(
                 "Order submitted",
@@ -665,8 +809,39 @@ class NEXUSEngine:
                 strategy=signal.strategy,
             )
 
+            # Fire async ReACT analysis (non-blocking)
+            if self._react_agent:
+                asyncio.create_task(self._run_react_analysis(signal, trade_id))
+
         except Exception as e:
             log.error("Execute failed", ticker=signal.ticker, error=str(e))
+
+    # ── ReACT analysis (async, non-blocking) ──────────────────────────────────
+
+    async def _run_react_analysis(self, signal: Signal, trade_id: str) -> None:
+        """Run ReACT market analysis after trade execution. Non-blocking."""
+        try:
+            result = await self._react_agent.analyze(signal)
+            if result:
+                self._react_reports[signal.ticker] = result
+                log.debug(
+                    "ReACT analysis complete",
+                    ticker=signal.ticker,
+                    confidence=f"{result.confidence:.2f}",
+                    tools_used=len(result.tool_calls),
+                )
+                # Link debate to trade in memory if available
+                if self._memory:
+                    try:
+                        debates = self._memory.get_recent_debates(5)
+                        for d in debates:
+                            if d["ticker"] == signal.ticker and not d.get("trade_id"):
+                                self._memory.link_trade(d["id"], trade_id)
+                                break
+                    except Exception:
+                        pass
+        except Exception as e:
+            log.debug("ReACT analysis failed", ticker=signal.ticker, error=str(e))
 
     # ── Options execution ──────────────────────────────────────────────────────
 

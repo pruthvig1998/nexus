@@ -401,6 +401,11 @@ class NewsSentimentStrategy:
     def __init__(self) -> None:
         self._headlines: deque[dict] = deque(maxlen=500)
         self._headline_expiry = timedelta(hours=2)
+        self._llm_parser = None  # Set via set_llm_parser()
+
+    def set_llm_parser(self, parser) -> None:
+        """Attach an optional LLM headline parser for fallback parsing."""
+        self._llm_parser = parser
 
     # ── Public API ───────────────────────────────────────────────────────────
 
@@ -446,6 +451,7 @@ class NewsSentimentStrategy:
           1. Direct ticker mentions
           2. Sector-level macro events that affect this ticker
           3. Sector rotation signals
+          4. LLM fallback for unmatched headlines with financial keywords
 
         If multiple headlines match, the strongest signal wins.
         """
@@ -473,6 +479,25 @@ class NewsSentimentStrategy:
                 parsed,
                 df,
             )
+
+            # LLM fallback: if regex returned nothing for this ticker and
+            # the headline hasn't been LLM-parsed yet, try LLM extraction
+            if signal is None and self._llm_parser and not entry.get("llm_parsed"):
+                if self._llm_parser.budget_remaining > 0 and parsed["event_type"] == "neutral":
+                    llm_result = await self._llm_parser.parse_headline(text)
+                    if llm_result:
+                        entry["llm_parsed"] = True
+                        entry["llm_result"] = llm_result
+                        # Check if the LLM found this ticker
+                        if ticker in llm_result.get("tickers", []):
+                            sentiment = llm_result["sentiment"] * llm_result.get("magnitude", 0.5)
+                            if abs(sentiment) >= 0.10:
+                                signal = self._build_signal(
+                                    ticker, sentiment,
+                                    f"llm_{llm_result['event_type']}",
+                                    text, df,
+                                )
+
             if signal and signal.score > best_score:
                 best_signal = signal
                 best_score = signal.score

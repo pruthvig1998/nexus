@@ -26,6 +26,7 @@ document.addEventListener("alpine:init", () => {
     brokerDeals: [],
     brokerTab: 'orders',
     editingTrade: null,
+    swarmDebates: [],
     _pnlChart: null,
     _dailyChart: null,
 
@@ -54,6 +55,16 @@ document.addEventListener("alpine:init", () => {
         this.account = account; this.positions = positions; this.signals = signals;
         this.openTrades = openTrades; this.closedTrades = closedTrades;
         this.stats = stats; this.pnlHistory = pnlHistory; this.status = status;
+        // Client-side safety: filter equity in options mode
+        if (status.options_enabled) {
+          this.positions = this.positions.filter(p => (p.instrument_type||'EQUITY') !== 'EQUITY');
+          this.openTrades = this.openTrades.filter(t => (t.instrument_type||'EQUITY') !== 'EQUITY');
+          this.closedTrades = this.closedTrades.filter(t => (t.instrument_type||'EQUITY') !== 'EQUITY');
+        }
+        // Fetch swarm debates if swarm is enabled
+        if (status.swarm_enabled) {
+          this.swarmDebates = await this.api("/api/swarm-debates?limit=10");
+        }
         this.lastUpdate = new Date();
       } catch (e) { console.error("Fetch error:", e); }
     },
@@ -81,15 +92,17 @@ document.addEventListener("alpine:init", () => {
         SCAN_COMPLETE: { text: "Scan complete", color: "blue" },
         DAILY_HALT: { text: "DAILY HALT", color: "red" },
         BROKER_CONNECTED: { text: "Broker connected", color: "green" },
+        SWARM_DEBATE: { text: "Swarm debate", color: "cyan" },
       };
       const label = labels[evt];
       if (label) { this.addActivity(label.text, this.eventDetail(evt, msg.data), label.color); }
-      if (["ORDER_FILLED","POSITION_OPENED","POSITION_CLOSED","ORDER_SUBMITTED","SIGNAL_GENERATED","BROKER_CONNECTED"].includes(evt)) this.fetchAll();
+      if (["ORDER_FILLED","POSITION_OPENED","POSITION_CLOSED","ORDER_SUBMITTED","SIGNAL_GENERATED","BROKER_CONNECTED","SWARM_DEBATE"].includes(evt)) this.fetchAll();
       if (evt === "SCAN_COMPLETE" && msg.data) this.status.scan_count = msg.data;
     },
 
     eventDetail(evt, data) {
       if (!data || typeof data === "string") return data || "";
+      if (evt === "SWARM_DEBATE" && data.ticker) { return `${data.ticker} ${data.consensus} (${Number(data.score).toFixed(2)})${data.vetoed?" VETOED":""}`; }
       if (data.ticker) { return `${data.ticker} ${data.side || data.direction || ""}${data.pnl != null ? " P&L " + this.fmtPnl(data.pnl) : ""}`; }
       if (typeof data === "number") return `#${data}`;
       return "";
@@ -154,12 +167,65 @@ document.addEventListener("alpine:init", () => {
       } catch (e) { alert('Error: ' + e.message); }
     },
 
+    // --- New helper: format symbol like Moomoo app (for position objects) ---
+    fmtSymbol(position) {
+      const type = (position.instrument_type || 'EQUITY').toUpperCase();
+      if (type === 'EQUITY') return position.ticker || '';
+      const ticker = position.ticker || '';
+      const typeLabel = type; // CALL or PUT
+      const exp = position.expiration || '';
+      // Format expiration as YYMMDD
+      const expFormatted = exp.replace(/-/g, '').substring(2); // "2026-03-27" -> "260327"
+      const strike = parseFloat(position.strike || 0).toFixed(2);
+      return `${ticker} ${typeLabel} - ${expFormatted} ${strike}`;
+    },
+
+    // --- New helper: format symbol like Moomoo app (for trade objects) ---
+    fmtSymbolFromTrade(trade) {
+      const type = (trade.instrument_type || 'EQUITY').toUpperCase();
+      if (type === 'EQUITY') return trade.ticker || '';
+      const ticker = trade.ticker || '';
+      const typeLabel = type; // CALL or PUT
+      const exp = trade.option_expiration || trade.expiration || '';
+      const expFormatted = exp.replace(/-/g, '').substring(2);
+      const strike = parseFloat(trade.option_strike || trade.strike || 0).toFixed(2);
+      return `${ticker} ${typeLabel} - ${expFormatted} ${strike}`;
+    },
+
+    // --- New helper: returns instrument type string ---
+    positionType(p) {
+      const type = (p.instrument_type || 'EQUITY').toUpperCase();
+      if (type === 'CALL') return 'CALL';
+      if (type === 'PUT') return 'PUT';
+      return 'EQUITY';
+    },
+
+    // --- Updated fmtContract: cleaner format "YYMMDD $STRIKE C/P" ---
     fmtContract(trade) {
       if (!trade.instrument_type || trade.instrument_type === 'EQUITY') return '';
       const right = trade.instrument_type === 'CALL' ? 'C' : 'P';
-      const strike = trade.option_strike || trade.strike || 0;
-      const exp = (trade.option_expiration || trade.expiration || '').substring(5);
-      return `${strike}${right} ${exp}`;
+      const strike = parseFloat(trade.option_strike || trade.strike || 0).toFixed(2);
+      const exp = trade.option_expiration || trade.expiration || '';
+      const expFormatted = exp.replace(/-/g, '').substring(2); // "2026-03-27" -> "260327"
+      return `${expFormatted} $${strike} ${right}`;
+    },
+
+    // --- New helper: quantity label ("229 shares" or "3 contracts") ---
+    fmtQtyLabel(p) {
+      const type = (p.instrument_type || 'EQUITY').toUpperCase();
+      const qty = Math.abs(p.shares || p.quantity || 0);
+      if (type === 'EQUITY') return `${qty} share${qty !== 1 ? 's' : ''}`;
+      return `${qty} contract${qty !== 1 ? 's' : ''}`;
+    },
+
+    // --- New helper: cost vs current price display ---
+    fmtCostVsCurrent(p) {
+      const cost = parseFloat(p.avg_cost || 0);
+      const current = parseFloat(p.current_price || p.last_price || 0);
+      return {
+        cost: `$${cost.toFixed(2)}`,
+        current: `$${current.toFixed(2)}`,
+      };
     },
 
     switchView(v) {
@@ -170,20 +236,27 @@ document.addEventListener("alpine:init", () => {
 
     get brokerConnected() { return this.account.broker_connected === true; },
 
+    // --- Total P&L computed getters ---
+    get totalPnl() { return this.positions.reduce((s, p) => s + (p.unrealized_pnl || 0), 0); },
+    get totalPnlPct() {
+      const cost = this.positions.reduce((s, p) => s + (p.avg_cost * p.shares), 0);
+      return cost > 0 ? (this.totalPnl / cost * 100) : 0;
+    },
+
     renderPnlChart() {
       const el = document.getElementById("pnl-chart");
       if (!el || !window.LightweightCharts) return;
       el.innerHTML = "";
       const chart = LightweightCharts.createChart(el, {
         width: el.clientWidth, height: 300,
-        layout: { background: { color: "#1E293B" }, textColor: "#94A3B8", fontFamily: "'JetBrains Mono', monospace" },
-        grid: { vertLines: { color: "rgba(74,111,165,0.1)" }, horzLines: { color: "rgba(74,111,165,0.1)" } },
-        timeScale: { borderColor: "rgba(74,111,165,0.3)" }, rightPriceScale: { borderColor: "rgba(74,111,165,0.3)" },
+        layout: { background: { color: "#06060c" }, textColor: "#94a3b8", fontFamily: "'JetBrains Mono', monospace" },
+        grid: { vertLines: { color: "rgba(99, 102, 241, 0.06)" }, horzLines: { color: "rgba(99, 102, 241, 0.06)" } },
+        timeScale: { borderColor: "rgba(99, 102, 241, 0.15)" }, rightPriceScale: { borderColor: "rgba(99, 102, 241, 0.15)" },
       });
       const sorted = [...this.pnlHistory].sort((a, b) => a.date.localeCompare(b.date));
       let cum = 0;
       const data = sorted.map(d => { cum += d.pnl || 0; return { time: d.date, value: cum }; });
-      if (data.length > 0) { chart.addLineSeries({ color: "#C5A55A", lineWidth: 2 }).setData(data); }
+      if (data.length > 0) { chart.addLineSeries({ color: "#818cf8", lineWidth: 2 }).setData(data); }
       this._pnlChart = chart;
       new ResizeObserver(() => chart.applyOptions({ width: el.clientWidth })).observe(el);
     },
@@ -194,12 +267,12 @@ document.addEventListener("alpine:init", () => {
       el.innerHTML = "";
       const chart = LightweightCharts.createChart(el, {
         width: el.clientWidth, height: 250,
-        layout: { background: { color: "#1E293B" }, textColor: "#94A3B8", fontFamily: "'JetBrains Mono', monospace" },
-        grid: { vertLines: { color: "rgba(74,111,165,0.1)" }, horzLines: { color: "rgba(74,111,165,0.1)" } },
-        timeScale: { borderColor: "rgba(74,111,165,0.3)" }, rightPriceScale: { borderColor: "rgba(74,111,165,0.3)" },
+        layout: { background: { color: "#06060c" }, textColor: "#94a3b8", fontFamily: "'JetBrains Mono', monospace" },
+        grid: { vertLines: { color: "rgba(99, 102, 241, 0.06)" }, horzLines: { color: "rgba(99, 102, 241, 0.06)" } },
+        timeScale: { borderColor: "rgba(99, 102, 241, 0.15)" }, rightPriceScale: { borderColor: "rgba(99, 102, 241, 0.15)" },
       });
       const sorted = [...this.pnlHistory].sort((a, b) => a.date.localeCompare(b.date));
-      const data = sorted.map(d => ({ time: d.date, value: d.pnl || 0, color: (d.pnl || 0) >= 0 ? "#22C55E" : "#EF4444" }));
+      const data = sorted.map(d => ({ time: d.date, value: d.pnl || 0, color: (d.pnl || 0) >= 0 ? "#10b981" : "#ef4444" }));
       if (data.length > 0) { chart.addHistogramSeries({ priceFormat: { type: "price", precision: 2 } }).setData(data); }
       this._dailyChart = chart;
       new ResizeObserver(() => chart.applyOptions({ width: el.clientWidth })).observe(el);
@@ -224,9 +297,10 @@ document.addEventListener("alpine:init", () => {
     fmtRate(v) { if (v == null) return "0%"; return `${(Number(v) * 100).toFixed(0)}%`; },
     fmtTime(ts) { if (!ts) return "-"; return new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }); },
     fmtDate(ts) { if (!ts) return "-"; return ts.substring(0, 10); },
-    pnlColor(v) { if (v == null || Number(v) === 0) return "color:var(--nexus-mid)"; return Number(v) >= 0 ? "color:var(--nexus-green)" : "color:var(--nexus-red)"; },
-    scoreColor(s) { s = Number(s||0); if (s >= 0.8) return "#22C55E"; if (s >= 0.65) return "#C5A55A"; return "#EF4444"; },
-    activityDotColor(c) { return {green:"var(--nexus-green)",red:"var(--nexus-red)",amber:"var(--nexus-amber)",blue:"var(--nexus-border)"}[c] || "var(--nexus-dim)"; },
+    pnlColor(v) { if (v == null || Number(v) === 0) return "color:var(--nexus-text-muted)"; return Number(v) >= 0 ? "color:var(--nexus-green)" : "color:var(--nexus-red)"; },
+    pnlClass(v) { if (v == null || Number(v) === 0) return ""; return Number(v) >= 0 ? "pnl-positive" : "pnl-negative"; },
+    scoreColor(s) { s = Number(s||0); if (s >= 0.8) return "#10b981"; if (s >= 0.65) return "#818cf8"; return "#ef4444"; },
+    activityDotColor(c) { return {green:"var(--nexus-green)",red:"var(--nexus-red)",amber:"var(--nexus-amber)",blue:"var(--nexus-accent-indigo)"}[c] || "var(--nexus-text-muted)"; },
 
     get filteredTrades() {
       const src = this.tradeFilter === "open" ? this.openTrades : this.closedTrades;
@@ -236,9 +310,12 @@ document.addEventListener("alpine:init", () => {
     },
     get pagedTrades() { const s = (this.tradePage-1)*this.tradesPerPage; return this.filteredTrades.slice(s, s+this.tradesPerPage); },
     get totalTradePages() { return Math.max(1, Math.ceil(this.filteredTrades.length / this.tradesPerPage)); },
-    get longExposure() { return this.positions.filter(p=>(p.side||"LONG")==="LONG").reduce((s,p)=>s+Math.abs(p.market_value||0),0); },
-    get shortExposure() { return this.positions.filter(p=>(p.side||"LONG")==="SHORT").reduce((s,p)=>s+Math.abs(p.market_value||0),0); },
+    get callExposure() { return this.positions.filter(p=>(p.instrument_type||"EQUITY")==="CALL").reduce((s,p)=>s+Math.abs(p.market_value||0),0); },
+    get putExposure() { return this.positions.filter(p=>(p.instrument_type||"EQUITY")==="PUT").reduce((s,p)=>s+Math.abs(p.market_value||0),0); },
+    get longExposure() { return this.positions.filter(p=>(p.side||"LONG")==="LONG"||(p.instrument_type||"")==="CALL").reduce((s,p)=>s+Math.abs(p.market_value||0),0); },
+    get shortExposure() { return this.positions.filter(p=>(p.side||"LONG")==="SHORT"||(p.instrument_type||"")==="PUT").reduce((s,p)=>s+Math.abs(p.market_value||0),0); },
     get netExposure() { return this.longExposure - this.shortExposure; },
+    get optionsMode() { return this.status.options_enabled === true; },
     exposurePct(exp) { return Math.min(100, (exp / (Number(this.account.portfolio_value) || 1)) * 100); },
     get strategyBreakdown() {
       const m = {};
